@@ -16,15 +16,8 @@ import {
   ShieldAlert
 } from 'lucide-react';
 import { motion } from 'motion/react';
-import jsPDF from 'jspdf';
-import 'jspdf-autotable';
-
-// Extend jsPDF type for autotable
-declare module 'jspdf' {
-  interface jsPDF {
-    autoTable: (options: any) => jsPDF;
-  }
-}
+import { jsPDF } from 'jspdf';
+import autoTable from 'jspdf-autotable';
 
 interface EdrmsAiProps {
   data: ReservationReport[];
@@ -64,78 +57,86 @@ export default function EdrmsAi({ data }: EdrmsAiProps) {
   }, [data]);
 
   const exportToPdf = () => {
-    const doc = new jsPDF();
-    const pageWidth = doc.internal.pageSize.getWidth();
-    
-    // Header
-    doc.setFontSize(22);
-    doc.setTextColor(5, 150, 105); // emerald-600
-    doc.text('EDRMS AI Intelligence Report', 14, 22);
-    
-    doc.setFontSize(10);
-    doc.setTextColor(100);
-    doc.text(`Generated on: ${new Date().toLocaleString()}`, 14, 30);
-    doc.text(`Total Reservations Analyzed: ${data.length}`, 14, 35);
-    
-    // OTA Leakage Section
-    doc.setFontSize(16);
-    doc.setTextColor(30);
-    doc.text('OTA Leakage Analysis', 14, 50);
-    
-    doc.autoTable({
-      startY: 55,
-      head: [['Metric', 'Value']],
-      body: [
-        ['Total OTA Reservations', otaLeakage.count.toLocaleString()],
-        ['Total OTA Revenue', `Rp ${otaLeakage.revenue.toLocaleString()}`],
-        ['Estimated OTA Fees (20%)', `Rp ${otaLeakage.otaFee.toLocaleString()}`],
-        ['Potential Direct Fees (5%)', `Rp ${otaLeakage.directFee.toLocaleString()}`],
-        ['Potential Annual Leakage', `Rp ${otaLeakage.leakage.toLocaleString()}`],
-      ],
-      theme: 'striped',
-      headStyles: { fillColor: [5, 150, 105] },
-    });
-
-    // AI Insights
-    if (insights.length > 0) {
-      let currentY = (doc as any).lastAutoTable.finalY + 15;
+    try {
+      console.log('Starting PDF export...');
+      const doc = new jsPDF();
+      const pageWidth = doc.internal.pageSize.getWidth();
+      
+      // Header
+      doc.setFontSize(22);
+      doc.setTextColor(5, 150, 105); // emerald-600
+      doc.text('EDRMS AI Intelligence Report', 14, 22);
+      
+      doc.setFontSize(10);
+      doc.setTextColor(100);
+      doc.text(`Generated on: ${new Date().toLocaleString()}`, 14, 30);
+      doc.text(`Total Reservations Analyzed: ${data.length}`, 14, 35);
+      
+      // OTA Leakage Section
       doc.setFontSize(16);
-      doc.text('AI Strategic Insights', 14, currentY);
-      currentY += 10;
-
-      insights.forEach((insight) => {
-        if (currentY > 250) {
-          doc.addPage();
-          currentY = 20;
-        }
-
-        doc.setFontSize(12);
-        doc.setFont('helvetica', 'bold');
-        doc.text(`${insight.category}: ${insight.title}`, 14, currentY);
-        currentY += 7;
-
-        doc.setFont('helvetica', 'normal');
-        doc.setFontSize(10);
-        const analysisLines = doc.splitTextToSize(insight.analysis, pageWidth - 28);
-        doc.text(analysisLines, 14, currentY);
-        currentY += (analysisLines.length * 5) + 5;
-
-        doc.setFont('helvetica', 'bold');
-        doc.text('Strategic Advice:', 14, currentY);
-        currentY += 5;
-        doc.setFont('helvetica', 'normal');
-        
-        insight.advice.forEach(adv => {
-          const advLines = doc.splitTextToSize(`• ${adv}`, pageWidth - 35);
-          doc.text(advLines, 20, currentY);
-          currentY += (advLines.length * 5);
-        });
-        
-        currentY += 10;
+      doc.setTextColor(30);
+      doc.text('OTA Leakage Analysis', 14, 50);
+      
+      autoTable(doc, {
+        startY: 55,
+        head: [['Metric', 'Value']],
+        body: [
+          ['Total OTA Reservations', otaLeakage.count.toLocaleString()],
+          ['Total OTA Revenue', `Rp ${otaLeakage.revenue.toLocaleString()}`],
+          ['Estimated OTA Fees (20%)', `Rp ${otaLeakage.otaFee.toLocaleString()}`],
+          ['Potential Direct Fees (5%)', `Rp ${otaLeakage.directFee.toLocaleString()}`],
+          ['Potential Annual Leakage', `Rp ${otaLeakage.leakage.toLocaleString()}`],
+        ],
+        theme: 'striped',
+        headStyles: { fillColor: [5, 150, 105] },
       });
-    }
 
-    doc.save(`edrms_ai_report_${new Date().toISOString().split('T')[0]}.pdf`);
+      // AI Insights
+      if (insights.length > 0) {
+        let currentY = (doc as any).lastAutoTable.finalY + 15;
+        doc.setFontSize(16);
+        doc.text('AI Strategic Insights', 14, currentY);
+        currentY += 10;
+
+        insights.forEach((insight) => {
+          if (currentY > 250) {
+            doc.addPage();
+            currentY = 20;
+          }
+
+          doc.setFontSize(12);
+          doc.setFont('helvetica', 'bold');
+          doc.text(`${insight.category}: ${insight.title}`, 14, currentY);
+          currentY += 7;
+
+          doc.setFont('helvetica', 'normal');
+          doc.setFontSize(10);
+          const analysisLines = doc.splitTextToSize(insight.analysis, pageWidth - 28);
+          doc.text(analysisLines, 14, currentY);
+          currentY += (analysisLines.length * 5) + 5;
+
+          doc.setFont('helvetica', 'bold');
+          doc.text('Strategic Advice:', 14, currentY);
+          currentY += 5;
+          doc.setFont('helvetica', 'normal');
+          
+          insight.advice.forEach(adv => {
+            const advLines = doc.splitTextToSize(`• ${adv}`, pageWidth - 35);
+            doc.text(advLines, 20, currentY);
+            currentY += (advLines.length * 5);
+          });
+          
+          currentY += 10;
+        });
+      }
+
+      console.log('Saving PDF...');
+      doc.save(`edrms_ai_report_${new Date().toISOString().split('T')[0]}.pdf`);
+      console.log('PDF saved successfully');
+    } catch (err) {
+      console.error('PDF Export Error:', err);
+      setError('Failed to export PDF. Please check the console for details.');
+    }
   };
 
   const generateInsights = async () => {
