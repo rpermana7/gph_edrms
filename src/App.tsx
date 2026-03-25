@@ -6,6 +6,7 @@ import { RevenueTrend, SegmentDistribution, SOBDistribution } from './components
 import { DistributionModule } from './components/DistributionModule';
 import { RevenueModule } from './components/RevenueModule';
 import { GuestInsightsModule } from './components/GuestInsightsModule';
+import { AuditAiModule } from './components/AuditAiModule';
 import EdrmsAi from './components/EdrmsAi';
 import Settings from './components/Settings';
 import { fetchRoomCountsFromDB, calculateTotalAvailableRoomNights } from './lib/rooms';
@@ -293,6 +294,10 @@ export default function App() {
       return <EdrmsAi data={data} />;
     }
     
+    if (activeTab === 'audit') {
+      return <AuditAiModule data={data} />;
+    }
+    
     if (activeTab === 'settings') {
       return <Settings />;
     }
@@ -303,10 +308,10 @@ export default function App() {
         <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 mb-6">
           <h2 className="text-xl font-bold text-slate-800">
             {activeTab === 'overview' && 'Dashboard Overview'}
-            {activeTab === 'revenue' && 'Revenue Performance'}
-            {activeTab === 'reservations' && 'Reservations'}
             {activeTab === 'distribution' && 'Distribution'}
+            {activeTab === 'revenue' && 'Room Revenue'}
             {activeTab === 'guests' && 'Guest Insights'}
+            {activeTab === 'reservations' && 'Reservations'}
           </h2>
           <div className="flex flex-col sm:flex-row items-center gap-3 bg-white p-2 rounded-xl border border-slate-200 shadow-sm">
             <div className="flex items-center border-r border-slate-100 pr-3">

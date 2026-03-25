@@ -7,7 +7,8 @@ import {
   Settings, 
   LogOut,
   Hotel,
-  PieChart as PieChartIcon
+  PieChart as PieChartIcon,
+  ShieldAlert
 } from 'lucide-react';
 import { clsx, type ClassValue } from 'clsx';
 import { twMerge } from 'tailwind-merge';
@@ -67,28 +68,28 @@ export default function DashboardLayout({ children, activeTab, onTabChange }: Da
             onClick={() => onTabChange('overview')}
           />
           <SidebarItem 
-            icon={TrendingUp} 
-            label="Revenue Performance" 
-            active={activeTab === 'revenue'} 
-            onClick={() => onTabChange('revenue')}
-          />
-          <SidebarItem 
-            icon={Calendar} 
-            label="Reservations" 
-            active={activeTab === 'reservations'} 
-            onClick={() => onTabChange('reservations')}
-          />
-          <SidebarItem 
             icon={PieChartIcon} 
             label="Distribution" 
             active={activeTab === 'distribution'} 
             onClick={() => onTabChange('distribution')}
           />
           <SidebarItem 
+            icon={TrendingUp} 
+            label="Room Revenue" 
+            active={activeTab === 'revenue'} 
+            onClick={() => onTabChange('revenue')}
+          />
+          <SidebarItem 
             icon={Users} 
             label="Guest Insights" 
             active={activeTab === 'guests'} 
             onClick={() => onTabChange('guests')}
+          />
+          <SidebarItem 
+            icon={Calendar} 
+            label="Reservations" 
+            active={activeTab === 'reservations'} 
+            onClick={() => onTabChange('reservations')}
           />
           <div className="pt-4 pb-2 px-4">
             <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">AI Intelligence</p>
@@ -98,6 +99,12 @@ export default function DashboardLayout({ children, activeTab, onTabChange }: Da
             label="EDRMS AI" 
             active={activeTab === 'ai'} 
             onClick={() => onTabChange('ai')}
+          />
+          <SidebarItem 
+            icon={ShieldAlert} 
+            label="AUDIT AI" 
+            active={activeTab === 'audit'} 
+            onClick={() => onTabChange('audit')}
           />
         </nav>
 
@@ -117,6 +124,7 @@ export default function DashboardLayout({ children, activeTab, onTabChange }: Da
         <header className="h-16 border-b border-slate-200 bg-white flex items-center justify-between px-8 sticky top-0 z-10">
           <h1 className="text-lg font-semibold text-slate-800">
             {activeTab === 'ai' ? 'EDRMS AI Intelligence' : 
+             activeTab === 'audit' ? 'AUDIT AI' :
              activeTab === 'settings' ? 'Settings' : 
              'Revenue Dashboard'}
           </h1>
