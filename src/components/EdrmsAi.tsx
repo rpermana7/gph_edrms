@@ -13,27 +13,87 @@ import {
   CalendarRange,
   FileDown,
   ArrowRight,
-  ShieldAlert
+  ShieldAlert,
+  Save,
+  History,
+  Download,
+  Trash2
 } from 'lucide-react';
-import { motion } from 'motion/react';
+import { motion, AnimatePresence } from 'motion/react';
 import { jsPDF } from 'jspdf';
 import autoTable from 'jspdf-autotable';
+import { supabase } from '../lib/supabase';
+import { AuditReport, AiInsight, OtaLeakageData } from '../types/audit';
 
 interface EdrmsAiProps {
   data: ReservationReport[];
 }
 
-interface AiInsight {
-  category: 'Ecommerce' | 'Distribution' | 'Revenue' | 'Seasonality';
-  title: string;
-  analysis: string;
-  advice: string[];
-}
-
 export default function EdrmsAi({ data }: EdrmsAiProps) {
   const [insights, setInsights] = useState<AiInsight[]>([]);
   const [loading, setLoading] = useState(false);
+  const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [savedReports, setSavedReports] = useState<AuditReport[]>([]);
+  const [showHistory, setShowHistory] = useState(false);
+
+  useEffect(() => {
+    fetchSavedReports();
+  }, []);
+
+  const fetchSavedReports = async () => {
+    try {
+      const { data: reports, error } = await supabase
+        .from('audit_reports')
+        .select('*')
+        .order('created_at', { ascending: false });
+
+      if (error) throw error;
+      setSavedReports(reports || []);
+    } catch (err) {
+      console.error('Error fetching reports:', err);
+    }
+  };
+
+  const saveReport = async () => {
+    if (insights.length === 0) return;
+    
+    setSaving(true);
+    try {
+      const { error } = await supabase
+        .from('audit_reports')
+        .insert([{
+          insights,
+          ota_leakage: otaLeakage,
+          total_reservations: data.length
+        }]);
+
+      if (error) throw error;
+      await fetchSavedReports();
+      alert('Audit report saved successfully!');
+    } catch (err) {
+      console.error('Error saving report:', err);
+      setError('Failed to save audit report.');
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const deleteReport = async (id: string) => {
+    if (!confirm('Are you sure you want to delete this report?')) return;
+    
+    try {
+      const { error } = await supabase
+        .from('audit_reports')
+        .delete()
+        .match({ id });
+
+      if (error) throw error;
+      setSavedReports(prev => prev.filter(r => r.id !== id));
+    } catch (err) {
+      console.error('Error deleting report:', err);
+    }
+  };
 
   const otaLeakage = useMemo(() => {
     const otaReservations = data.filter(item => 
@@ -56,8 +116,13 @@ export default function EdrmsAi({ data }: EdrmsAiProps) {
     };
   }, [data]);
 
-  const exportToPdf = () => {
+  const exportToPdf = (reportData?: { insights: AiInsight[], otaLeakage: OtaLeakageData, totalReservations: number, createdAt?: string }) => {
     try {
+      const activeInsights = reportData?.insights || insights;
+      const activeOtaLeakage = reportData?.otaLeakage || otaLeakage;
+      const activeTotal = reportData?.totalReservations || data.length;
+      const activeDate = reportData?.createdAt ? new Date(reportData.createdAt).toLocaleString() : new Date().toLocaleString();
+
       console.log('Starting PDF export...');
       const doc = new jsPDF();
       const pageWidth = doc.internal.pageSize.getWidth();
@@ -81,8 +146,8 @@ export default function EdrmsAi({ data }: EdrmsAiProps) {
       
       doc.setFontSize(10);
       doc.setTextColor(100);
-      doc.text(`Generated on: ${new Date().toLocaleString()}`, margin, 30);
-      doc.text(`Total Reservations Analyzed: ${data.length}`, margin, 35);
+      doc.text(`Generated on: ${activeDate}`, margin, 30);
+      doc.text(`Total Reservations Analyzed: ${activeTotal}`, margin, 35);
       
       // OTA Leakage Section
       doc.setFontSize(16);
@@ -93,11 +158,11 @@ export default function EdrmsAi({ data }: EdrmsAiProps) {
         startY: 55,
         head: [['Metric', 'Value']],
         body: [
-          ['Total OTA Reservations', otaLeakage.count.toLocaleString()],
-          ['Total OTA Revenue', `Rp ${otaLeakage.revenue.toLocaleString()}`],
-          ['Estimated OTA Fees (20%)', `Rp ${otaLeakage.otaFee.toLocaleString()}`],
-          ['Potential Direct Fees (5%)', `Rp ${otaLeakage.directFee.toLocaleString()}`],
-          ['Potential Annual Leakage', `Rp ${otaLeakage.leakage.toLocaleString()}`],
+          ['Total OTA Reservations', activeOtaLeakage.count.toLocaleString()],
+          ['Total OTA Revenue', `Rp ${activeOtaLeakage.revenue.toLocaleString()}`],
+          ['Estimated OTA Fees (20%)', `Rp ${activeOtaLeakage.otaFee.toLocaleString()}`],
+          ['Potential Direct Fees (5%)', `Rp ${activeOtaLeakage.directFee.toLocaleString()}`],
+          ['Potential Annual Leakage', `Rp ${activeOtaLeakage.leakage.toLocaleString()}`],
         ],
         theme: 'striped',
         headStyles: { fillColor: [5, 150, 105] },
@@ -105,7 +170,7 @@ export default function EdrmsAi({ data }: EdrmsAiProps) {
       });
 
       // AI Insights
-      if (insights.length > 0) {
+      if (activeInsights.length > 0) {
         let currentY = (doc as any).lastAutoTable.finalY + 15;
         
         currentY = checkPageBreak(currentY, 15);
@@ -114,7 +179,7 @@ export default function EdrmsAi({ data }: EdrmsAiProps) {
         doc.text('AI Strategic Insights', margin, currentY);
         currentY += 10;
 
-        insights.forEach((insight) => {
+        activeInsights.forEach((insight) => {
           // Estimate height for title and analysis
           const analysisLines = doc.splitTextToSize(insight.analysis, pageWidth - (margin * 2));
           const analysisHeight = (analysisLines.length * 5) + 15; // title + spacing + analysis
@@ -152,11 +217,56 @@ export default function EdrmsAi({ data }: EdrmsAiProps) {
       }
 
       console.log('Saving PDF...');
-      doc.save(`edrms_ai_report_${new Date().toISOString().split('T')[0]}.pdf`);
+      const fileName = `edrms_ai_report_${activeDate.replace(/[/:\s,]/g, '_')}.pdf`;
+      doc.save(fileName);
       console.log('PDF saved successfully');
     } catch (err) {
       console.error('PDF Export Error:', err);
       setError('Failed to export PDF. Please check the console for details.');
+    }
+  };
+
+  const exportToCsv = (reportData: AuditReport) => {
+    try {
+      const rows = [
+        ['EDRMS AI Audit Report'],
+        [`Generated on: ${new Date(reportData.created_at).toLocaleString()}`],
+        [`Total Reservations: ${reportData.total_reservations}`],
+        [''],
+        ['OTA Leakage Analysis'],
+        ['Metric', 'Value'],
+        ['Total OTA Reservations', reportData.ota_leakage.count],
+        ['Total OTA Revenue', reportData.ota_leakage.revenue],
+        ['Estimated OTA Fees (20%)', reportData.ota_leakage.otaFee],
+        ['Potential Direct Fees (5%)', reportData.ota_leakage.directFee],
+        ['Potential Annual Leakage', reportData.ota_leakage.leakage],
+        [''],
+        ['AI Strategic Insights'],
+        ['Category', 'Title', 'Analysis', 'Advice']
+      ];
+
+      reportData.insights.forEach(insight => {
+        rows.push([
+          insight.category,
+          insight.title,
+          insight.analysis,
+          insight.advice.join(' | ')
+        ]);
+      });
+
+      const csvContent = rows.map(r => r.map(c => `"${String(c).replace(/"/g, '""')}"`).join(',')).join('\n');
+      const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
+      const link = document.createElement('a');
+      const url = URL.createObjectURL(blob);
+      link.setAttribute('href', url);
+      link.setAttribute('download', `edrms_audit_${new Date(reportData.created_at).toISOString().split('T')[0]}.csv`);
+      link.style.visibility = 'hidden';
+      document.body.appendChild(link);
+      link.click();
+      document.body.removeChild(link);
+    } catch (err) {
+      console.error('CSV Export Error:', err);
+      setError('Failed to export CSV.');
     }
   };
 
@@ -288,11 +398,29 @@ export default function EdrmsAi({ data }: EdrmsAiProps) {
               {insights.length > 0 ? 'Refresh Analysis' : 'Generate Insights'}
             </button>
             <button 
-              onClick={exportToPdf}
-              className="px-6 py-2.5 bg-emerald-500/20 text-white border border-white/30 rounded-xl font-semibold flex items-center gap-2 hover:bg-emerald-500/30 transition-colors shadow-sm"
+              onClick={() => exportToPdf()}
+              disabled={insights.length === 0}
+              className="px-6 py-2.5 bg-emerald-500/20 text-white border border-white/30 rounded-xl font-semibold flex items-center gap-2 hover:bg-emerald-500/30 transition-colors shadow-sm disabled:opacity-50"
             >
               <FileDown size={20} />
               Export to PDF
+            </button>
+            {insights.length > 0 && (
+              <button 
+                onClick={saveReport}
+                disabled={saving}
+                className="px-6 py-2.5 bg-emerald-700 text-white rounded-xl font-semibold flex items-center gap-2 hover:bg-emerald-800 transition-colors shadow-sm disabled:opacity-50"
+              >
+                {saving ? <Loader2 className="animate-spin" size={20} /> : <Save size={20} />}
+                Save Audit Report
+              </button>
+            )}
+            <button 
+              onClick={() => setShowHistory(!showHistory)}
+              className="px-6 py-2.5 bg-slate-800 text-white rounded-xl font-semibold flex items-center gap-2 hover:bg-slate-700 transition-colors shadow-sm"
+            >
+              <History size={20} />
+              {showHistory ? 'Hide History' : 'Audit History'}
             </button>
           </div>
         </div>
@@ -300,6 +428,91 @@ export default function EdrmsAi({ data }: EdrmsAiProps) {
           <Brain size={240} />
         </div>
       </div>
+
+      <AnimatePresence>
+        {showHistory && (
+          <motion.div
+            initial={{ opacity: 0, height: 0 }}
+            animate={{ opacity: 1, height: 'auto' }}
+            exit={{ opacity: 0, height: 0 }}
+            className="overflow-hidden"
+          >
+            <div className="bg-white rounded-2xl border border-slate-200 shadow-sm p-6 mb-8">
+              <div className="flex items-center justify-between mb-6">
+                <h3 className="text-lg font-bold text-slate-800 flex items-center gap-2">
+                  <History className="text-emerald-600" />
+                  Saved Audit Reports
+                </h3>
+                <span className="text-xs font-bold text-slate-400 uppercase tracking-widest">{savedReports.length} Reports</span>
+              </div>
+              
+              {savedReports.length === 0 ? (
+                <div className="text-center py-10 text-slate-400 italic">
+                  No saved reports found.
+                </div>
+              ) : (
+                <div className="overflow-x-auto">
+                  <table className="w-full text-left">
+                    <thead>
+                      <tr className="border-b border-slate-100">
+                        <th className="pb-4 font-bold text-slate-500 text-xs uppercase tracking-wider">Date & Time</th>
+                        <th className="pb-4 font-bold text-slate-500 text-xs uppercase tracking-wider text-center">Reservations</th>
+                        <th className="pb-4 font-bold text-slate-500 text-xs uppercase tracking-wider text-right">OTA Leakage</th>
+                        <th className="pb-4 font-bold text-slate-500 text-xs uppercase tracking-wider text-right">Actions</th>
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y divide-slate-50">
+                      {savedReports.map((report) => (
+                        <tr key={report.id} className="group hover:bg-slate-50/50 transition-colors">
+                          <td className="py-4 text-sm text-slate-700">
+                            {new Date(report.created_at).toLocaleString()}
+                          </td>
+                          <td className="py-4 text-sm text-slate-700 text-center">
+                            {report.total_reservations}
+                          </td>
+                          <td className="py-4 text-sm font-bold text-red-600 text-right">
+                            Rp {report.ota_leakage.leakage.toLocaleString()}
+                          </td>
+                          <td className="py-4 text-right">
+                            <div className="flex items-center justify-end gap-2">
+                              <button
+                                onClick={() => exportToPdf({
+                                  insights: report.insights,
+                                  otaLeakage: report.ota_leakage,
+                                  totalReservations: report.total_reservations,
+                                  createdAt: report.created_at
+                                })}
+                                className="p-2 text-slate-400 hover:text-emerald-600 transition-colors"
+                                title="Download PDF"
+                              >
+                                <FileDown size={18} />
+                              </button>
+                              <button
+                                onClick={() => exportToCsv(report)}
+                                className="p-2 text-slate-400 hover:text-blue-600 transition-colors"
+                                title="Download CSV"
+                              >
+                                <Download size={18} />
+                              </button>
+                              <button
+                                onClick={() => deleteReport(report.id)}
+                                className="p-2 text-slate-400 hover:text-red-600 transition-colors"
+                                title="Delete Report"
+                              >
+                                <Trash2 size={18} />
+                              </button>
+                            </div>
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              )}
+            </div>
+          </motion.div>
+        )}
+      </AnimatePresence>
 
       {loading && (
         <div className="flex flex-col items-center justify-center py-20 space-y-4">
