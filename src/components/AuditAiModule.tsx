@@ -1,21 +1,27 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { ReservationReport } from '../types/reservation';
 import { differenceInDays, parseISO, isValid } from 'date-fns';
-import { ShieldAlert, Search, AlertTriangle, Info, CheckCircle2, Loader2, Download } from 'lucide-react';
+import { 
+  ShieldAlert, 
+  Search, 
+  AlertTriangle, 
+  Info, 
+  CheckCircle2, 
+  Loader2, 
+  Download, 
+  Save, 
+  History, 
+  Trash2, 
+  FileDown 
+} from 'lucide-react';
+import { supabase } from '../lib/supabase';
+import { AuditScan, Anomaly } from '../types/audit';
+import { motion, AnimatePresence } from 'motion/react';
+import { jsPDF } from 'jspdf';
+import autoTable from 'jspdf-autotable';
 
 interface Props {
   data: ReservationReport[];
-}
-
-interface Anomaly {
-  id: string;
-  guestName: string;
-  arrival: string;
-  type: string;
-  description: string;
-  severity: 'high' | 'medium' | 'low';
-  category: 'Ecommerce' | 'Distribution' | 'Revenue' | 'Data Entry';
-  createdBy: string;
 }
 
 const parseDbDate = (dateStr: string) => {
@@ -27,11 +33,71 @@ const parseDbDate = (dateStr: string) => {
 
 export const AuditAiModule = ({ data }: Props) => {
   const [isScanning, setIsScanning] = useState(false);
+  const [saving, setSaving] = useState(false);
   const [scanComplete, setScanComplete] = useState(false);
   const [anomalies, setAnomalies] = useState<Anomaly[]>([]);
+  const [savedScans, setSavedScans] = useState<AuditScan[]>([]);
+  const [showHistory, setShowHistory] = useState(false);
+  const [error, setError] = useState<string | null>(null);
 
-  const runAudit = () => {
-    setIsScanning(true);
+  useEffect(() => {
+    fetchSavedScans();
+  }, []);
+
+  const fetchSavedScans = async () => {
+    try {
+      const { data: scans, error } = await supabase
+        .from('audit_scans')
+        .select('*')
+        .order('created_at', { ascending: false });
+
+      if (error) throw error;
+      setSavedScans(scans || []);
+    } catch (err) {
+      console.error('Error fetching scans:', err);
+    }
+  };
+
+  const saveScan = async () => {
+    if (anomalies.length === 0 && !scanComplete) return;
+    
+    setSaving(true);
+    try {
+      const { error } = await supabase
+        .from('audit_scans')
+        .insert([{
+          anomalies,
+          total_records: data.length
+        }]);
+
+      if (error) throw error;
+      await fetchSavedScans();
+      alert('Audit scan saved successfully!');
+    } catch (err) {
+      console.error('Error saving scan:', err);
+      setError('Failed to save audit scan.');
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const deleteScan = async (id: string) => {
+    if (!confirm('Are you sure you want to delete this scan record?')) return;
+    
+    try {
+      const { error } = await supabase
+        .from('audit_scans')
+        .delete()
+        .match({ id });
+
+      if (error) throw error;
+      setSavedScans(prev => prev.filter(s => s.id !== id));
+    } catch (err) {
+      console.error('Error deleting scan:', err);
+    }
+  };
+
+  const runAudit = () => {    setIsScanning(true);
     setScanComplete(false);
     
     // Simulate AI scanning delay for UX
@@ -161,11 +227,12 @@ export const AuditAiModule = ({ data }: Props) => {
     }, 2000);
   };
 
-  const exportToCsv = () => {
-    if (anomalies.length === 0) return;
+  const exportToCsv = (scanData?: AuditScan) => {
+    const activeAnomalies = scanData ? scanData.anomalies : anomalies;
+    if (activeAnomalies.length === 0) return;
 
     const headers = ['Reservation #', 'Guest Name', 'Arrival', 'Category', 'Type', 'Description', 'Severity', 'Created By'];
-    const rows = anomalies.map(a => [
+    const rows = activeAnomalies.map(a => [
       a.id,
       `"${a.guestName}"`,
       a.arrival.split(' ')[0],
@@ -185,11 +252,90 @@ export const AuditAiModule = ({ data }: Props) => {
     const url = URL.createObjectURL(blob);
     const link = document.createElement('a');
     link.setAttribute('href', url);
-    link.setAttribute('download', `audit_ai_results_${new Date().toISOString().split('T')[0]}.csv`);
+    const dateStr = scanData ? new Date(scanData.created_at).toISOString().split('T')[0] : new Date().toISOString().split('T')[0];
+    link.setAttribute('download', `audit_ai_results_${dateStr}.csv`);
     link.style.visibility = 'hidden';
     document.body.appendChild(link);
     link.click();
     document.body.removeChild(link);
+  };
+
+  const exportToPdf = (scanData?: AuditScan) => {
+    try {
+      const activeAnomalies = scanData ? scanData.anomalies : anomalies;
+      const activeDate = scanData ? new Date(scanData.created_at).toLocaleString() : new Date().toLocaleString();
+      const activeTotal = scanData ? scanData.total_records : data.length;
+
+      const doc = new jsPDF();
+      const pageWidth = doc.internal.pageSize.getWidth();
+      const pageHeight = doc.internal.pageSize.getHeight();
+      const margin = 14;
+      const bottomMargin = 20;
+      const maxContentHeight = pageHeight - bottomMargin;
+
+      const checkPageBreak = (currentY: number, neededHeight: number) => {
+        if (currentY + neededHeight > maxContentHeight) {
+          doc.addPage();
+          return 20;
+        }
+        return currentY;
+      };
+
+      // Header
+      doc.setFontSize(22);
+      doc.setTextColor(5, 150, 105);
+      doc.text('AUDIT AI Scan Report', margin, 22);
+
+      doc.setFontSize(10);
+      doc.setTextColor(100);
+      doc.text(`Generated on: ${activeDate}`, margin, 30);
+      doc.text(`Total Records Scanned: ${activeTotal}`, margin, 35);
+      doc.text(`Anomalies Found: ${activeAnomalies.length}`, margin, 40);
+
+      let currentY = 50;
+
+      if (activeAnomalies.length === 0) {
+        doc.setFontSize(12);
+        doc.setTextColor(30);
+        doc.text('No anomalies found. All records are clear.', margin, currentY);
+      } else {
+        activeAnomalies.forEach((anomaly, idx) => {
+          const neededHeight = 40;
+          currentY = checkPageBreak(currentY, neededHeight);
+
+          // Anomaly Box
+          doc.setDrawColor(230);
+          doc.setFillColor(252, 252, 252);
+          doc.rect(margin, currentY, pageWidth - (margin * 2), 35, 'FD');
+
+          doc.setFontSize(11);
+          doc.setFont('helvetica', 'bold');
+          doc.setTextColor(anomaly.severity === 'high' ? 220 : (anomaly.severity === 'medium' ? 180 : 30), 30, 30);
+          doc.text(`[${anomaly.severity.toUpperCase()}] ${anomaly.type}`, margin + 5, currentY + 8);
+
+          doc.setFontSize(9);
+          doc.setFont('helvetica', 'normal');
+          doc.setTextColor(100);
+          doc.text(`Category: ${anomaly.category}`, margin + 5, currentY + 13);
+
+          doc.setTextColor(60);
+          const descLines = doc.splitTextToSize(anomaly.description, pageWidth - (margin * 2) - 10);
+          doc.text(descLines, margin + 5, currentY + 18);
+
+          doc.setFontSize(8);
+          doc.setTextColor(120);
+          doc.text(`Res #: ${anomaly.id} | Guest: ${anomaly.guestName} | Arrival: ${anomaly.arrival.split(' ')[0]} | Staff: ${anomaly.createdBy}`, margin + 5, currentY + 30);
+
+          currentY += 40;
+        });
+      }
+
+      const fileName = `audit_ai_report_${activeDate.replace(/[/:\s,]/g, '_')}.pdf`;
+      doc.save(fileName);
+    } catch (err) {
+      console.error('PDF Export Error:', err);
+      setError('Failed to export PDF.');
+    }
   };
 
   const getSeverityColor = (severity: string) => {
@@ -221,26 +367,134 @@ export const AuditAiModule = ({ data }: Props) => {
           Our AI engine scans all your reservation records to identify red flags, data entry errors, and revenue leakage across Ecommerce, Distribution, and Revenue categories.
         </p>
         
-        <button 
-          onClick={runAudit}
-          disabled={isScanning}
-          className={`px-6 py-3 rounded-xl font-bold text-white transition-all flex items-center justify-center gap-2 mx-auto ${
-            isScanning ? 'bg-emerald-400 cursor-not-allowed' : 'bg-emerald-600 hover:bg-emerald-700 shadow-md hover:shadow-lg'
-          }`}
-        >
-          {isScanning ? (
-            <>
-              <Loader2 size={20} className="animate-spin" />
-              Scanning {data.length} records...
-            </>
-          ) : (
-            <>
-              <Search size={20} />
-              {scanComplete ? 'Run Audit Again' : 'Scan All Records'}
-            </>
+        <div className="flex flex-wrap gap-3 justify-center mt-6">
+          <button 
+            onClick={runAudit}
+            disabled={isScanning}
+            className={`px-6 py-3 rounded-xl font-bold text-white transition-all flex items-center justify-center gap-2 ${
+              isScanning ? 'bg-emerald-400 cursor-not-allowed' : 'bg-emerald-600 hover:bg-emerald-700 shadow-md hover:shadow-lg'
+            }`}
+          >
+            {isScanning ? (
+              <>
+                <Loader2 size={20} className="animate-spin" />
+                Scanning {data.length} records...
+              </>
+            ) : (
+              <>
+                <Search size={20} />
+                {scanComplete ? 'Run Audit Again' : 'Scan All Records'}
+              </>
+            )}
+          </button>
+
+          {scanComplete && (
+            <button 
+              onClick={saveScan}
+              disabled={saving}
+              className="px-6 py-3 bg-emerald-700 text-white rounded-xl font-bold flex items-center gap-2 hover:bg-emerald-800 transition-all shadow-md disabled:opacity-50"
+            >
+              {saving ? <Loader2 className="animate-spin" size={20} /> : <Save size={20} />}
+              Save Scan Result
+            </button>
           )}
-        </button>
+
+          <button 
+            onClick={() => setShowHistory(!showHistory)}
+            className="px-6 py-3 bg-slate-800 text-white rounded-xl font-bold flex items-center gap-2 hover:bg-slate-700 transition-all shadow-md"
+          >
+            <History size={20} />
+            {showHistory ? 'Hide History' : 'Scan History'}
+          </button>
+        </div>
       </div>
+
+      <AnimatePresence>
+        {showHistory && (
+          <motion.div
+            initial={{ opacity: 0, height: 0 }}
+            animate={{ opacity: 1, height: 'auto' }}
+            exit={{ opacity: 0, height: 0 }}
+            className="overflow-hidden"
+          >
+            <div className="bg-white rounded-2xl border border-slate-200 shadow-sm p-6 mb-8">
+              <div className="flex items-center justify-between mb-6">
+                <h3 className="text-lg font-bold text-slate-800 flex items-center gap-2">
+                  <History className="text-emerald-600" />
+                  Saved Scan History
+                </h3>
+                <span className="text-xs font-bold text-slate-400 uppercase tracking-widest">{savedScans.length} Records</span>
+              </div>
+              
+              {savedScans.length === 0 ? (
+                <div className="text-center py-10 text-slate-400 italic">
+                  No saved scans found.
+                </div>
+              ) : (
+                <div className="overflow-x-auto">
+                  <table className="w-full text-left">
+                    <thead>
+                      <tr className="border-b border-slate-100">
+                        <th className="pb-4 font-bold text-slate-500 text-xs uppercase tracking-wider">Date & Time</th>
+                        <th className="pb-4 font-bold text-slate-500 text-xs uppercase tracking-wider text-center">Records</th>
+                        <th className="pb-4 font-bold text-slate-500 text-xs uppercase tracking-wider text-center">Flags</th>
+                        <th className="pb-4 font-bold text-slate-500 text-xs uppercase tracking-wider text-right">Actions</th>
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y divide-slate-50">
+                      {savedScans.map((scan) => (
+                        <tr key={scan.id} className="group hover:bg-slate-50/50 transition-colors">
+                          <td className="py-4 text-sm text-slate-700">
+                            {new Date(scan.created_at).toLocaleString()}
+                          </td>
+                          <td className="py-4 text-sm text-slate-700 text-center">
+                            {scan.total_records}
+                          </td>
+                          <td className="py-4 text-sm font-bold text-red-600 text-center">
+                            {scan.anomalies.length}
+                          </td>
+                          <td className="py-4 text-right">
+                            <div className="flex items-center justify-end gap-2">
+                              <button
+                                onClick={() => exportToPdf(scan)}
+                                className="p-2 text-slate-400 hover:text-emerald-600 transition-colors"
+                                title="Download PDF"
+                              >
+                                <FileDown size={18} />
+                              </button>
+                              <button
+                                onClick={() => exportToCsv(scan)}
+                                className="p-2 text-slate-400 hover:text-blue-600 transition-colors"
+                                title="Download CSV"
+                              >
+                                <Download size={18} />
+                              </button>
+                              <button
+                                onClick={() => deleteScan(scan.id)}
+                                className="p-2 text-slate-400 hover:text-red-600 transition-colors"
+                                title="Delete Record"
+                              >
+                                <Trash2 size={18} />
+                              </button>
+                            </div>
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              )}
+            </div>
+          </motion.div>
+        )}
+      </AnimatePresence>
+
+      {error && (
+        <div className="bg-red-50 border border-red-100 rounded-xl p-4 text-red-700 text-sm flex items-center gap-3">
+          <AlertTriangle size={18} />
+          {error}
+        </div>
+      )}
 
       {scanComplete && (
         <div className="space-y-4">
@@ -250,11 +504,18 @@ export const AuditAiModule = ({ data }: Props) => {
             </h3>
             <div className="flex gap-2 text-sm">
               <button 
-                onClick={exportToCsv}
+                onClick={() => exportToCsv()}
                 className="flex items-center gap-2 px-3 py-1 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-lg font-medium transition-colors mr-2"
               >
                 <Download size={16} />
                 Export CSV
+              </button>
+              <button 
+                onClick={() => exportToPdf()}
+                className="flex items-center gap-2 px-3 py-1 bg-emerald-50 hover:bg-emerald-100 text-emerald-700 rounded-lg font-medium transition-colors mr-2"
+              >
+                <FileDown size={16} />
+                Export PDF
               </button>
               <span className="px-3 py-1 bg-red-50 text-red-700 rounded-full font-medium">
                 {anomalies.filter(a => a.severity === 'high').length} High
