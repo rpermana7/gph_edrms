@@ -5,6 +5,7 @@ import DashboardLayout from './components/DashboardLayout';
 import { RevenueTrend, SegmentDistribution, SOBDistribution } from './components/Charts';
 import { DistributionModule } from './components/DistributionModule';
 import { RevenueModule } from './components/RevenueModule';
+import { GuestInsightsModule } from './components/GuestInsightsModule';
 import EdrmsAi from './components/EdrmsAi';
 import Settings from './components/Settings';
 import { fetchRoomCountsFromDB, calculateTotalAvailableRoomNights } from './lib/rooms';
@@ -436,10 +437,7 @@ export default function App() {
         )}
 
         {activeTab === 'guests' && (
-          <div className="bg-white p-10 rounded-2xl border border-slate-200 shadow-sm flex flex-col items-center justify-center">
-            <h3 className="text-lg font-bold text-slate-800 mb-2">Guest Insights</h3>
-            <p className="text-slate-500">The guest insights module is coming soon.</p>
-          </div>
+          <GuestInsightsModule data={dashboardData} />
         )}
       </>
     );

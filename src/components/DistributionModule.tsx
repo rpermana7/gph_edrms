@@ -24,7 +24,7 @@ const OTAOverviewTable = ({ data }: Props) => {
     const grouped: Record<string, { count: number; nights: number; revenue: number }> = {};
     
     otaReservations.forEach(item => {
-      const name = item.ReservationName || 'Unknown';
+      const name = (item.ReservationName || 'Unknown').trim().toUpperCase();
       if (!grouped[name]) {
         grouped[name] = { count: 0, nights: 0, revenue: 0 };
       }
