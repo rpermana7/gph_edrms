@@ -4,7 +4,8 @@ import { ReservationReport, DashboardStats } from './types/reservation';
 import DashboardLayout from './components/DashboardLayout';
 import { RevenueTrend, SegmentDistribution, SOBDistribution } from './components/Charts';
 import EdrmsAi from './components/EdrmsAi';
-import { TOTAL_HOTEL_ROOMS } from './constants';
+import Settings from './components/Settings';
+import { fetchRoomCountsFromDB, calculateTotalAvailableRoomNights } from './lib/rooms';
 import { 
   TrendingUp, 
   Users, 
@@ -63,6 +64,23 @@ export default function App() {
   const [selectedMonthYear, setSelectedMonthYear] = useState('All');
   const [dashboardMonthYear, setDashboardMonthYear] = useState('All');
   const [activeTab, setActiveTab] = useState('overview');
+  const [roomCounts, setRoomCounts] = useState<Record<string, number>>({});
+
+  useEffect(() => {
+    async function loadRoomCounts() {
+      const counts = await fetchRoomCountsFromDB();
+      setRoomCounts(counts);
+    }
+    
+    loadRoomCounts();
+    
+    const handleRoomCountsUpdate = () => {
+      loadRoomCounts();
+    };
+    
+    window.addEventListener('roomCountsUpdated', handleRoomCountsUpdate);
+    return () => window.removeEventListener('roomCountsUpdated', handleRoomCountsUpdate);
+  }, []);
 
   useEffect(() => {
     async function fetchData() {
@@ -107,9 +125,8 @@ export default function App() {
     
     const startDate = min(arrivalDates);
     const endDate = max(departureDates);
-    const daysInRange = Math.max(1, differenceInDays(endDate, startDate));
     
-    const availableRoomNights = TOTAL_HOTEL_ROOMS * daysInRange;
+    const availableRoomNights = calculateTotalAvailableRoomNights(startDate, endDate, roomCounts);
     
     const adr = totalRoomNightsSold > 0 ? totalRevenue / totalRoomNightsSold : 0;
     const occupancyRate = Math.min(100, (totalRoomNightsSold / availableRoomNights) * 100);
@@ -123,7 +140,7 @@ export default function App() {
       occupancyRate: Math.round(occupancyRate * 10) / 10, 
       revPar 
     };
-  }, [dashboardData]);
+  }, [dashboardData, roomCounts]);
 
   const filteredData = useMemo(() => {
     return dashboardData.filter(item => {
@@ -190,6 +207,10 @@ export default function App() {
   const renderContent = () => {
     if (activeTab === 'ai') {
       return <EdrmsAi data={data} />;
+    }
+    
+    if (activeTab === 'settings') {
+      return <Settings />;
     }
 
     return (

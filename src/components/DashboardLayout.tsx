@@ -102,7 +102,12 @@ export default function DashboardLayout({ children, activeTab, onTabChange }: Da
         </nav>
 
         <div className="p-4 border-t border-slate-100">
-          <SidebarItem icon={Settings} label="Settings" />
+          <SidebarItem 
+            icon={Settings} 
+            label="Settings" 
+            active={activeTab === 'settings'} 
+            onClick={() => onTabChange('settings')}
+          />
           <SidebarItem icon={LogOut} label="Logout" />
         </div>
       </aside>
@@ -111,7 +116,9 @@ export default function DashboardLayout({ children, activeTab, onTabChange }: Da
       <main className="flex-1 overflow-y-auto">
         <header className="h-16 border-b border-slate-200 bg-white flex items-center justify-between px-8 sticky top-0 z-10">
           <h1 className="text-lg font-semibold text-slate-800">
-            {activeTab === 'ai' ? 'EDRMS AI Intelligence' : 'Revenue Dashboard'}
+            {activeTab === 'ai' ? 'EDRMS AI Intelligence' : 
+             activeTab === 'settings' ? 'Settings' : 
+             'Revenue Dashboard'}
           </h1>
           <div className="flex items-center gap-4">
             <div className="text-right">
