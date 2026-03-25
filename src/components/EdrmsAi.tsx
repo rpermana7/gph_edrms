@@ -61,21 +61,33 @@ export default function EdrmsAi({ data }: EdrmsAiProps) {
       console.log('Starting PDF export...');
       const doc = new jsPDF();
       const pageWidth = doc.internal.pageSize.getWidth();
+      const pageHeight = doc.internal.pageSize.getHeight();
+      const margin = 14;
+      const bottomMargin = 20;
+      const maxContentHeight = pageHeight - bottomMargin;
       
+      const checkPageBreak = (currentY: number, neededHeight: number) => {
+        if (currentY + neededHeight > maxContentHeight) {
+          doc.addPage();
+          return 20; // New page start Y
+        }
+        return currentY;
+      };
+
       // Header
       doc.setFontSize(22);
       doc.setTextColor(5, 150, 105); // emerald-600
-      doc.text('EDRMS AI Intelligence Report', 14, 22);
+      doc.text('EDRMS AI Intelligence Report', margin, 22);
       
       doc.setFontSize(10);
       doc.setTextColor(100);
-      doc.text(`Generated on: ${new Date().toLocaleString()}`, 14, 30);
-      doc.text(`Total Reservations Analyzed: ${data.length}`, 14, 35);
+      doc.text(`Generated on: ${new Date().toLocaleString()}`, margin, 30);
+      doc.text(`Total Reservations Analyzed: ${data.length}`, margin, 35);
       
       // OTA Leakage Section
       doc.setFontSize(16);
       doc.setTextColor(30);
-      doc.text('OTA Leakage Analysis', 14, 50);
+      doc.text('OTA Leakage Analysis', margin, 50);
       
       autoTable(doc, {
         startY: 55,
@@ -89,41 +101,50 @@ export default function EdrmsAi({ data }: EdrmsAiProps) {
         ],
         theme: 'striped',
         headStyles: { fillColor: [5, 150, 105] },
+        margin: { left: margin, right: margin }
       });
 
       // AI Insights
       if (insights.length > 0) {
         let currentY = (doc as any).lastAutoTable.finalY + 15;
+        
+        currentY = checkPageBreak(currentY, 15);
         doc.setFontSize(16);
-        doc.text('AI Strategic Insights', 14, currentY);
+        doc.setTextColor(30);
+        doc.text('AI Strategic Insights', margin, currentY);
         currentY += 10;
 
         insights.forEach((insight) => {
-          if (currentY > 250) {
-            doc.addPage();
-            currentY = 20;
-          }
+          // Estimate height for title and analysis
+          const analysisLines = doc.splitTextToSize(insight.analysis, pageWidth - (margin * 2));
+          const analysisHeight = (analysisLines.length * 5) + 15; // title + spacing + analysis
+          
+          currentY = checkPageBreak(currentY, analysisHeight);
 
           doc.setFontSize(12);
           doc.setFont('helvetica', 'bold');
-          doc.text(`${insight.category}: ${insight.title}`, 14, currentY);
+          doc.text(`${insight.category}: ${insight.title}`, margin, currentY);
           currentY += 7;
 
           doc.setFont('helvetica', 'normal');
           doc.setFontSize(10);
-          const analysisLines = doc.splitTextToSize(insight.analysis, pageWidth - 28);
-          doc.text(analysisLines, 14, currentY);
+          doc.text(analysisLines, margin, currentY);
           currentY += (analysisLines.length * 5) + 5;
 
+          // Strategic Advice Header
+          currentY = checkPageBreak(currentY, 10);
           doc.setFont('helvetica', 'bold');
-          doc.text('Strategic Advice:', 14, currentY);
+          doc.text('Strategic Advice:', margin, currentY);
           currentY += 5;
           doc.setFont('helvetica', 'normal');
           
           insight.advice.forEach(adv => {
-            const advLines = doc.splitTextToSize(`• ${adv}`, pageWidth - 35);
-            doc.text(advLines, 20, currentY);
-            currentY += (advLines.length * 5);
+            const advLines = doc.splitTextToSize(`• ${adv}`, pageWidth - (margin * 2) - 6);
+            const advHeight = (advLines.length * 5);
+            
+            currentY = checkPageBreak(currentY, advHeight);
+            doc.text(advLines, margin + 6, currentY);
+            currentY += advHeight;
           });
           
           currentY += 10;
