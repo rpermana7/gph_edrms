@@ -67,7 +67,8 @@ export const getRoomCountForDate = (date: Date, counts: Record<string, number>):
 
 export const calculateTotalAvailableRoomNights = (startDate: Date, endDate: Date, counts: Record<string, number>): number => {
   let total = 0;
-  const days = Math.max(1, differenceInDays(endDate, startDate));
+  // differenceInDays is exclusive, so we add 1 to include the end date
+  const days = Math.max(1, differenceInDays(endDate, startDate) + 1);
   
   for (let i = 0; i < days; i++) {
     const currentDate = addDays(startDate, i);

@@ -16,20 +16,42 @@ import {
   AlertCircle,
   Download,
   ChevronRight,
-  ChevronLeft
+  ChevronLeft,
+  RefreshCw
 } from 'lucide-react';
-import { format, parse, differenceInDays, min, max } from 'date-fns';
+import { format, parse, differenceInDays, min, max, startOfDay, endOfDay, addDays } from 'date-fns';
 
 const DB_DATE_FORMAT = 'yyyy-MM-dd';
 
-const parseDbDate = (dateStr: string) => {
+const parseDbDate = (dateStr: string | Date) => {
   if (!dateStr) return new Date();
-  // Try parsing with the specified format, fallback to standard parsing if it fails
+  if (dateStr instanceof Date) return dateStr;
+  
+  const str = String(dateStr);
+  
+  // Try standard Date parsing first (handles ISO strings, etc)
+  const d = new Date(str);
+  if (!isNaN(d.getTime())) return d;
+
+  // Try parsing just the date part if it has time
+  const datePart = str.split(' ')[0].split('T')[0];
+  const d2 = new Date(datePart);
+  if (!isNaN(d2.getTime())) return d2;
+
+  // Try parsing with the specified format
   try {
-    const parsed = parse(dateStr, DB_DATE_FORMAT, new Date());
-    return isNaN(parsed.getTime()) ? new Date(dateStr) : parsed;
+    let parsed = parse(datePart, DB_DATE_FORMAT, new Date());
+    if (!isNaN(parsed.getTime())) return parsed;
+    
+    parsed = parse(datePart, 'dd/MM/yyyy', new Date());
+    if (!isNaN(parsed.getTime())) return parsed;
+    
+    parsed = parse(datePart, 'MM/dd/yyyy', new Date());
+    if (!isNaN(parsed.getTime())) return parsed;
+    
+    return new Date();
   } catch (e) {
-    return new Date(dateStr);
+    return new Date();
   }
 };
 
@@ -62,7 +84,15 @@ export default function App() {
   const [searchTerm, setSearchTerm] = useState('');
   const [statusFilter, setStatusFilter] = useState('All');
   const [selectedMonthYear, setSelectedMonthYear] = useState('All');
-  const [dashboardMonthYear, setDashboardMonthYear] = useState('All');
+  const [datePerspective, setDatePerspective] = useState<'stay' | 'booking' | 'arrival'>('stay');
+  const [dateRange, setDateRange] = useState({
+    start: '2025-01-01',
+    end: '2025-12-31'
+  });
+  const [appliedFilter, setAppliedFilter] = useState({
+    perspective: 'stay' as 'stay' | 'booking' | 'arrival',
+    range: { start: '2025-01-01', end: '2025-12-31' }
+  });
   const [activeTab, setActiveTab] = useState('overview');
   const [roomCounts, setRoomCounts] = useState<Record<string, number>>({});
 
@@ -105,32 +135,81 @@ export default function App() {
   }, []);
 
   const dashboardData = useMemo(() => {
-    if (dashboardMonthYear === 'All') return data;
+    const { perspective, range } = appliedFilter;
+    if (!range.start || !range.end) return data;
+    
+    const start = startOfDay(parseDbDate(range.start));
+    const end = endOfDay(parseDbDate(range.end));
+
     return data.filter(item => {
-      if (!item.Arrival) return false;
-      const date = parseDbDate(item.Arrival);
-      return format(date, 'MMMM yyyy') === dashboardMonthYear;
+      if (perspective === 'booking') {
+        if (!item.CreatedDate) return false;
+        const created = parseDbDate(item.CreatedDate);
+        return created >= start && created <= end;
+      } else if (perspective === 'arrival') {
+        if (!item.Arrival) return false;
+        const arrival = parseDbDate(item.Arrival);
+        return arrival >= start && arrival <= end;
+      } else {
+        // stay dates
+        if (!item.Arrival || !item.Departure) return false;
+        const arrival = startOfDay(parseDbDate(item.Arrival));
+        const departure = startOfDay(parseDbDate(item.Departure));
+        // Overlaps if arrival <= end AND departure > start
+        return arrival <= end && departure > start;
+      }
     });
-  }, [data, dashboardMonthYear]);
+  }, [data, appliedFilter]);
 
   const stats = useMemo((): DashboardStats => {
+    const { perspective, range } = appliedFilter;
     if (dashboardData.length === 0) return { totalRevenue: 0, totalRooms: 0, totalNights: 0, adr: 0, occupancyRate: 0, revPar: 0 };
 
-    const totalRevenue = dashboardData.reduce((sum, item) => sum + Number(item.TotalRevenue), 0);
-    const totalRoomNightsSold = dashboardData.reduce((sum, item) => sum + (Number(item.RoomQuantity || 1) * Number(item.Night || 1)), 0);
-    
-    // Calculate date range to find available room nights
-    const arrivalDates = dashboardData.map(item => parseDbDate(item.Arrival));
-    const departureDates = dashboardData.map(item => parseDbDate(item.Departure));
-    
-    const startDate = min(arrivalDates);
-    const endDate = max(departureDates);
-    
-    const availableRoomNights = calculateTotalAvailableRoomNights(startDate, endDate, roomCounts);
+    let totalRevenue = 0;
+    let totalRoomNightsSold = 0;
+    let availableRoomNights = 0;
+
+    const start = range.start ? startOfDay(parseDbDate(range.start)) : undefined;
+    const end = range.end ? endOfDay(parseDbDate(range.end)) : undefined;
+
+    if (perspective === 'stay' && start && end) {
+      // Explode into nightly stays
+      dashboardData.forEach(item => {
+        const arrival = startOfDay(parseDbDate(item.Arrival));
+        const departure = startOfDay(parseDbDate(item.Departure));
+        
+        const overlapStart = max([arrival, start]);
+        const overlapEnd = min([departure, addDays(end, 1)]); // departure is exclusive
+        
+        const overlapNights = Math.max(0, differenceInDays(overlapEnd, overlapStart));
+        
+        if (overlapNights > 0) {
+          const dailyRevenue = Number(item.TotalRevenue) / (Number(item.Night) || 1);
+          totalRevenue += dailyRevenue * overlapNights;
+          totalRoomNightsSold += (Number(item.RoomQuantity) || 1) * overlapNights;
+        }
+      });
+      availableRoomNights = calculateTotalAvailableRoomNights(start, end, roomCounts);
+    } else {
+      // Standard calculation for booking/arrival or if no date range
+      totalRevenue = dashboardData.reduce((sum, item) => sum + Number(item.TotalRevenue), 0);
+      totalRoomNightsSold = dashboardData.reduce((sum, item) => sum + (Number(item.RoomQuantity || 1) * Number(item.Night || 1)), 0);
+      
+      if (start && end) {
+        availableRoomNights = calculateTotalAvailableRoomNights(start, end, roomCounts);
+      } else {
+        // Fallback if no date range selected
+        const arrivalDates = dashboardData.map(item => parseDbDate(item.Arrival));
+        const departureDates = dashboardData.map(item => parseDbDate(item.Departure));
+        const minDate = arrivalDates.length ? min(arrivalDates) : new Date();
+        const maxDate = departureDates.length ? max(departureDates) : new Date();
+        availableRoomNights = calculateTotalAvailableRoomNights(minDate, maxDate, roomCounts);
+      }
+    }
     
     const adr = totalRoomNightsSold > 0 ? totalRevenue / totalRoomNightsSold : 0;
-    const occupancyRate = Math.min(100, (totalRoomNightsSold / availableRoomNights) * 100);
-    const revPar = totalRevenue / availableRoomNights;
+    const occupancyRate = availableRoomNights > 0 ? Math.min(100, (totalRoomNightsSold / availableRoomNights) * 100) : 0;
+    const revPar = availableRoomNights > 0 ? totalRevenue / availableRoomNights : 0;
 
     return { 
       totalRevenue, 
@@ -140,7 +219,7 @@ export default function App() {
       occupancyRate: Math.round(occupancyRate * 10) / 10, 
       revPar 
     };
-  }, [dashboardData, roomCounts]);
+  }, [dashboardData, appliedFilter, roomCounts]);
 
   const filteredData = useMemo(() => {
     return dashboardData.filter(item => {
@@ -216,20 +295,46 @@ export default function App() {
     return (
       <>
         {/* Dashboard Header / Global Filters */}
-        <div className="flex items-center justify-between mb-6">
+        <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 mb-6">
           <h2 className="text-xl font-bold text-slate-800">Dashboard Overview</h2>
-          <div className="flex items-center gap-3">
-            <span className="text-sm font-medium text-slate-500">Filter by Month:</span>
-            <select 
-              className="text-sm border-none bg-white shadow-sm rounded-xl px-4 py-2 text-slate-700 focus:ring-2 focus:ring-emerald-500 font-medium"
-              value={dashboardMonthYear}
-              onChange={(e) => setDashboardMonthYear(e.target.value)}
-            >
-              <option value="All">All Time</option>
-              {availableMonthsYears.map(my => (
-                <option key={my} value={my}>{my}</option>
-              ))}
-            </select>
+          <div className="flex flex-col sm:flex-row items-center gap-3 bg-white p-2 rounded-xl border border-slate-200 shadow-sm">
+            <div className="flex items-center border-r border-slate-100 pr-3">
+              <span className="text-xs font-bold text-slate-400 uppercase tracking-wider mr-2">Perspective:</span>
+              <select 
+                className="text-sm border-none bg-transparent text-emerald-700 font-bold focus:ring-0 cursor-pointer"
+                value={datePerspective}
+                onChange={(e) => setDatePerspective(e.target.value as any)}
+              >
+                <option value="stay">Stay Dates (Accrual)</option>
+                <option value="booking">Booking Date (Pace)</option>
+                <option value="arrival">Arrival Date (Operations)</option>
+              </select>
+            </div>
+            <div className="flex items-center gap-2 pl-1">
+              <span className="text-xs font-bold text-slate-400 uppercase tracking-wider">Range:</span>
+              <input 
+                type="date" 
+                className="text-sm border-none bg-slate-50 rounded-lg px-3 py-1.5 text-slate-700 focus:ring-2 focus:ring-emerald-500 font-medium"
+                value={dateRange.start}
+                onChange={(e) => setDateRange(prev => ({ ...prev, start: e.target.value }))}
+              />
+              <span className="text-slate-400">-</span>
+              <input 
+                type="date" 
+                className="text-sm border-none bg-slate-50 rounded-lg px-3 py-1.5 text-slate-700 focus:ring-2 focus:ring-emerald-500 font-medium"
+                value={dateRange.end}
+                onChange={(e) => setDateRange(prev => ({ ...prev, end: e.target.value }))}
+              />
+            </div>
+            <div className="pl-2 border-l border-slate-100">
+              <button 
+                onClick={() => setAppliedFilter({ perspective: datePerspective, range: dateRange })}
+                className="p-2 bg-emerald-50 text-emerald-600 rounded-lg hover:bg-emerald-100 transition-colors flex items-center justify-center"
+                title="Apply Filters"
+              >
+                <RefreshCw size={16} />
+              </button>
+            </div>
           </div>
         </div>
 
