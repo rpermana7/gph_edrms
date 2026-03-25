@@ -309,7 +309,7 @@ export default function App() {
           <h2 className="text-xl font-bold text-slate-800">
             {activeTab === 'overview' && 'Dashboard Overview'}
             {activeTab === 'distribution' && 'Distribution'}
-            {activeTab === 'revenue' && 'Room Revenue'}
+            {activeTab === 'revenue' && 'Room Performance'}
             {activeTab === 'guests' && 'Guest Insights'}
             {activeTab === 'reservations' && 'Reservations'}
           </h2>
@@ -431,7 +431,7 @@ export default function App() {
         )}
 
         {activeTab === 'revenue' && (
-          <RevenueModule data={dashboardData} />
+          <RevenueModule data={dashboardData} roomCounts={roomCounts} />
         )}
 
         {activeTab === 'reservations' && (
