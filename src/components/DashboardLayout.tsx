@@ -38,7 +38,13 @@ const SidebarItem = ({ icon: Icon, label, active, onClick }: SidebarItemProps) =
   </button>
 );
 
-export default function DashboardLayout({ children }: { children: React.ReactNode }) {
+interface DashboardLayoutProps {
+  children: React.ReactNode;
+  activeTab: string;
+  onTabChange: (tab: string) => void;
+}
+
+export default function DashboardLayout({ children, activeTab, onTabChange }: DashboardLayoutProps) {
   return (
     <div className="flex h-screen bg-slate-50 font-sans">
       {/* Sidebar */}
@@ -54,11 +60,45 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
         </div>
 
         <nav className="flex-1 px-4 py-4 space-y-1">
-          <SidebarItem icon={LayoutDashboard} label="Overview" active />
-          <SidebarItem icon={TrendingUp} label="Revenue Performance" />
-          <SidebarItem icon={Calendar} label="Reservations" />
-          <SidebarItem icon={PieChartIcon} label="Distribution" />
-          <SidebarItem icon={Users} label="Guest Insights" />
+          <SidebarItem 
+            icon={LayoutDashboard} 
+            label="Overview" 
+            active={activeTab === 'overview'} 
+            onClick={() => onTabChange('overview')}
+          />
+          <SidebarItem 
+            icon={TrendingUp} 
+            label="Revenue Performance" 
+            active={activeTab === 'revenue'} 
+            onClick={() => onTabChange('revenue')}
+          />
+          <SidebarItem 
+            icon={Calendar} 
+            label="Reservations" 
+            active={activeTab === 'reservations'} 
+            onClick={() => onTabChange('reservations')}
+          />
+          <SidebarItem 
+            icon={PieChartIcon} 
+            label="Distribution" 
+            active={activeTab === 'distribution'} 
+            onClick={() => onTabChange('distribution')}
+          />
+          <SidebarItem 
+            icon={Users} 
+            label="Guest Insights" 
+            active={activeTab === 'guests'} 
+            onClick={() => onTabChange('guests')}
+          />
+          <div className="pt-4 pb-2 px-4">
+            <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">AI Intelligence</p>
+          </div>
+          <SidebarItem 
+            icon={TrendingUp} 
+            label="EDRMS AI" 
+            active={activeTab === 'ai'} 
+            onClick={() => onTabChange('ai')}
+          />
         </nav>
 
         <div className="p-4 border-t border-slate-100">
@@ -70,7 +110,9 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
       {/* Main Content */}
       <main className="flex-1 overflow-y-auto">
         <header className="h-16 border-b border-slate-200 bg-white flex items-center justify-between px-8 sticky top-0 z-10">
-          <h1 className="text-lg font-semibold text-slate-800">Revenue Dashboard</h1>
+          <h1 className="text-lg font-semibold text-slate-800">
+            {activeTab === 'ai' ? 'EDRMS AI Intelligence' : 'Revenue Dashboard'}
+          </h1>
           <div className="flex items-center gap-4">
             <div className="text-right">
               <p className="text-sm font-medium text-slate-900">Admin User</p>
