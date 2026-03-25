@@ -61,6 +61,7 @@ export default function App() {
   const [searchTerm, setSearchTerm] = useState('');
   const [statusFilter, setStatusFilter] = useState('All');
   const [selectedMonthYear, setSelectedMonthYear] = useState('All');
+  const [dashboardMonthYear, setDashboardMonthYear] = useState('All');
   const [activeTab, setActiveTab] = useState('overview');
 
   useEffect(() => {
@@ -85,15 +86,24 @@ export default function App() {
     fetchData();
   }, []);
 
-  const stats = useMemo((): DashboardStats => {
-    if (data.length === 0) return { totalRevenue: 0, totalRooms: 0, totalNights: 0, adr: 0, occupancyRate: 0, revPar: 0 };
+  const dashboardData = useMemo(() => {
+    if (dashboardMonthYear === 'All') return data;
+    return data.filter(item => {
+      if (!item.Arrival) return false;
+      const date = parseDbDate(item.Arrival);
+      return format(date, 'MMMM yyyy') === dashboardMonthYear;
+    });
+  }, [data, dashboardMonthYear]);
 
-    const totalRevenue = data.reduce((sum, item) => sum + Number(item.TotalRevenue), 0);
-    const totalRoomNightsSold = data.reduce((sum, item) => sum + (Number(item.RoomQuantity || 1) * Number(item.Night || 1)), 0);
+  const stats = useMemo((): DashboardStats => {
+    if (dashboardData.length === 0) return { totalRevenue: 0, totalRooms: 0, totalNights: 0, adr: 0, occupancyRate: 0, revPar: 0 };
+
+    const totalRevenue = dashboardData.reduce((sum, item) => sum + Number(item.TotalRevenue), 0);
+    const totalRoomNightsSold = dashboardData.reduce((sum, item) => sum + (Number(item.RoomQuantity || 1) * Number(item.Night || 1)), 0);
     
     // Calculate date range to find available room nights
-    const arrivalDates = data.map(item => parseDbDate(item.Arrival));
-    const departureDates = data.map(item => parseDbDate(item.Departure));
+    const arrivalDates = dashboardData.map(item => parseDbDate(item.Arrival));
+    const departureDates = dashboardData.map(item => parseDbDate(item.Departure));
     
     const startDate = min(arrivalDates);
     const endDate = max(departureDates);
@@ -113,10 +123,10 @@ export default function App() {
       occupancyRate: Math.round(occupancyRate * 10) / 10, 
       revPar 
     };
-  }, [data]);
+  }, [dashboardData]);
 
   const filteredData = useMemo(() => {
-    return data.filter(item => {
+    return dashboardData.filter(item => {
       const matchesSearch = 
         item.GuestName?.toLowerCase().includes(searchTerm.toLowerCase()) ||
         item.ReservationNumber?.toString().includes(searchTerm) ||
@@ -126,7 +136,7 @@ export default function App() {
       
       return matchesSearch && matchesStatus;
     });
-  }, [data, searchTerm, statusFilter]);
+  }, [dashboardData, searchTerm, statusFilter]);
 
   const availableMonthsYears = useMemo(() => {
     const monthsYears = new Set<string>();
@@ -184,6 +194,24 @@ export default function App() {
 
     return (
       <>
+        {/* Dashboard Header / Global Filters */}
+        <div className="flex items-center justify-between mb-6">
+          <h2 className="text-xl font-bold text-slate-800">Dashboard Overview</h2>
+          <div className="flex items-center gap-3">
+            <span className="text-sm font-medium text-slate-500">Filter by Month:</span>
+            <select 
+              className="text-sm border-none bg-white shadow-sm rounded-xl px-4 py-2 text-slate-700 focus:ring-2 focus:ring-emerald-500 font-medium"
+              value={dashboardMonthYear}
+              onChange={(e) => setDashboardMonthYear(e.target.value)}
+            >
+              <option value="All">All Time</option>
+              {availableMonthsYears.map(my => (
+                <option key={my} value={my}>{my}</option>
+              ))}
+            </select>
+          </div>
+        </div>
+
         {/* Stats Grid */}
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6 mb-8">
           <StatCard 
@@ -239,14 +267,14 @@ export default function App() {
           </div>
           <div className="bg-white p-6 rounded-2xl border border-slate-200 shadow-sm">
             <h3 className="font-bold text-slate-800 mb-6">Segment Distribution</h3>
-            <SegmentDistribution data={data} />
+            <SegmentDistribution data={dashboardData} />
           </div>
         </div>
 
         <div className="grid grid-cols-1 lg:grid-cols-3 gap-6 mb-8">
           <div className="bg-white p-6 rounded-2xl border border-slate-200 shadow-sm">
             <h3 className="font-bold text-slate-800 mb-6">Source of Business (SOB)</h3>
-            <SOBDistribution data={data} />
+            <SOBDistribution data={dashboardData} />
           </div>
           <div className="lg:col-span-2 bg-white rounded-2xl border border-slate-200 shadow-sm overflow-hidden">
             <div className="p-6 border-b border-slate-100 flex flex-col sm:flex-row sm:items-center justify-between gap-4">
