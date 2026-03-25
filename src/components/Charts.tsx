@@ -90,39 +90,85 @@ export const RevenueTrend = ({ data, filterMonthYear = 'All' }: ChartProps) => {
 export const SegmentDistribution = ({ data }: ChartProps) => {
   const grouped = data.reduce((acc: any, curr) => {
     const segment = curr.Segment || 'Unknown';
-    if (!acc[segment]) acc[segment] = 0;
-    acc[segment] += 1;
+    if (!acc[segment]) acc[segment] = { amount: 0, revenue: 0 };
+    acc[segment].amount += 1;
+    acc[segment].revenue += Number(curr.TotalRevenue) || 0;
     return acc;
   }, {});
 
   const chartData = Object.keys(grouped).map(name => ({
     name,
-    value: grouped[name]
-  }));
+    amount: grouped[name].amount,
+    revenue: grouped[name].revenue
+  })).sort((a, b) => b.amount - a.amount);
 
-  const COLORS = ['#10b981', '#3b82f6', '#f59e0b', '#ef4444', '#8b5cf6'];
+  const totalAmount = chartData.reduce((sum, item) => sum + item.amount, 0);
+
+  const COLORS = ['#10b981', '#3b82f6', '#f59e0b', '#ef4444', '#8b5cf6', '#ec4899', '#14b8a6', '#f97316'];
+
+  const renderCustomizedLabel = ({ cx, cy, midAngle, innerRadius, outerRadius, percent, index }: any) => {
+    const RADIAN = Math.PI / 180;
+    const radius = innerRadius + (outerRadius - innerRadius) * 0.5;
+    const x = cx + radius * Math.cos(-midAngle * RADIAN);
+    const y = cy + radius * Math.sin(-midAngle * RADIAN);
+
+    return percent > 0.05 ? (
+      <text x={x} y={y} fill="white" textAnchor="middle" dominantBaseline="central" className="text-xs font-bold">
+        {`${(percent * 100).toFixed(0)}%`}
+      </text>
+    ) : null;
+  };
 
   return (
-    <div className="h-[300px] w-full">
-      <ResponsiveContainer width="100%" height="100%">
-        <PieChart>
-          <Pie
-            data={chartData}
-            cx="50%"
-            cy="50%"
-            innerRadius={60}
-            outerRadius={80}
-            paddingAngle={5}
-            dataKey="value"
-          >
-            {chartData.map((entry, index) => (
-              <Cell key={`cell-${index}`} fill={COLORS[index % COLORS.length]} />
+    <div className="flex flex-col xl:flex-row gap-6 items-center">
+      <div className="h-[250px] w-full xl:w-1/2">
+        <ResponsiveContainer width="100%" height="100%">
+          <PieChart>
+            <Pie
+              data={chartData}
+              cx="50%"
+              cy="50%"
+              outerRadius={100}
+              dataKey="amount"
+              labelLine={false}
+              label={renderCustomizedLabel}
+            >
+              {chartData.map((entry, index) => (
+                <Cell key={`cell-${index}`} fill={COLORS[index % COLORS.length]} />
+              ))}
+            </Pie>
+            <Tooltip 
+              formatter={(value: number, name: string, props: any) => {
+                const percent = ((value / totalAmount) * 100).toFixed(1);
+                return [`${value} (${percent}%)`, 'Amount'];
+              }}
+            />
+          </PieChart>
+        </ResponsiveContainer>
+      </div>
+      <div className="w-full xl:w-1/2 overflow-x-auto">
+        <table className="w-full text-left border-collapse text-xs">
+          <thead>
+            <tr className="border-b border-slate-100">
+              <th className="py-2 font-bold text-slate-500">Segment</th>
+              <th className="py-2 font-bold text-slate-500 text-right">Amount</th>
+              <th className="py-2 font-bold text-slate-500 text-right">Revenue</th>
+            </tr>
+          </thead>
+          <tbody className="divide-y divide-slate-50">
+            {chartData.map((item, index) => (
+              <tr key={item.name} className="hover:bg-slate-50 transition-colors">
+                <td className="py-2 flex items-center gap-2">
+                  <div className="w-3 h-3 rounded-full shrink-0" style={{ backgroundColor: COLORS[index % COLORS.length] }}></div>
+                  <span className="font-medium text-slate-700 truncate max-w-[100px]" title={item.name}>{item.name}</span>
+                </td>
+                <td className="py-2 text-right font-medium text-slate-600">{item.amount}</td>
+                <td className="py-2 text-right font-medium text-slate-600">Rp {item.revenue.toLocaleString()}</td>
+              </tr>
             ))}
-          </Pie>
-          <Tooltip />
-          <Legend verticalAlign="bottom" height={36}/>
-        </PieChart>
-      </ResponsiveContainer>
+          </tbody>
+        </table>
+      </div>
     </div>
   );
 };
