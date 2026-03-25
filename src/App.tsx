@@ -3,6 +3,8 @@ import { supabase } from './lib/supabase';
 import { ReservationReport, DashboardStats } from './types/reservation';
 import DashboardLayout from './components/DashboardLayout';
 import { RevenueTrend, SegmentDistribution, SOBDistribution } from './components/Charts';
+import { DistributionModule } from './components/DistributionModule';
+import { RevenueModule } from './components/RevenueModule';
 import EdrmsAi from './components/EdrmsAi';
 import Settings from './components/Settings';
 import { fetchRoomCountsFromDB, calculateTotalAvailableRoomNights } from './lib/rooms';
@@ -298,7 +300,13 @@ export default function App() {
       <>
         {/* Dashboard Header / Global Filters */}
         <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 mb-6">
-          <h2 className="text-xl font-bold text-slate-800">Dashboard Overview</h2>
+          <h2 className="text-xl font-bold text-slate-800">
+            {activeTab === 'overview' && 'Dashboard Overview'}
+            {activeTab === 'revenue' && 'Revenue Performance'}
+            {activeTab === 'reservations' && 'Reservations'}
+            {activeTab === 'distribution' && 'Distribution'}
+            {activeTab === 'guests' && 'Guest Insights'}
+          </h2>
           <div className="flex flex-col sm:flex-row items-center gap-3 bg-white p-2 rounded-xl border border-slate-200 shadow-sm">
             <div className="flex items-center border-r border-slate-100 pr-3">
               <span className="text-xs font-bold text-slate-400 uppercase tracking-wider mr-2">Perspective:</span>
@@ -342,71 +350,97 @@ export default function App() {
           </div>
         </div>
 
-        {/* Stats Grid */}
-        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6 mb-8">
-          <StatCard 
-            title="Total Revenue" 
-            value={`Rp ${stats.totalRevenue.toLocaleString()}`} 
-            subValue={`${stats.totalRooms} Rooms Sold`}
-            icon={DollarSign} 
-            color="bg-emerald-50 text-emerald-600"
-          />
-          <StatCard 
-            title="ADR" 
-            value={`Rp ${Math.round(stats.adr).toLocaleString()}`} 
-            subValue="Average Daily Rate"
-            icon={TrendingUp} 
-            color="bg-blue-50 text-blue-600"
-            formula="Total Revenue ÷ Rooms Sold"
-          />
-          <StatCard 
-            title="Occupancy" 
-            value={`${stats.occupancyRate}%`} 
-            subValue="Current Period"
-            icon={Bed} 
-            color="bg-amber-50 text-amber-600"
-            formula="Rooms Sold ÷ Total Available Rooms"
-          />
-          <StatCard 
-            title="RevPAR" 
-            value={`Rp ${Math.round(stats.revPar).toLocaleString()}`} 
-            subValue="Revenue Per Available Room"
-            icon={Users} 
-            color="bg-purple-50 text-purple-600"
-            formula="Total Revenue ÷ Total Available Rooms"
-          />
-        </div>
-
-        {/* Charts Section */}
-        <div className="grid grid-cols-1 gap-6 mb-8">
-          <div className="bg-white p-6 rounded-2xl border border-slate-200 shadow-sm">
-            <div className="flex items-center justify-between mb-6">
-              <h3 className="font-bold text-slate-800">Revenue Trend (Departed)</h3>
-              <select 
-                className="text-sm border-none bg-slate-50 rounded-lg px-3 py-1 text-slate-600 focus:ring-0"
-                value={selectedMonthYear}
-                onChange={(e) => setSelectedMonthYear(e.target.value)}
-              >
-                <option value="All">All Time</option>
-                {availableMonthsYears.map(my => (
-                  <option key={my} value={my}>{my}</option>
-                ))}
-              </select>
+        {activeTab === 'overview' && (
+          <>
+            {/* Stats Grid */}
+            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6 mb-8">
+              <StatCard 
+                title="Total Revenue" 
+                value={`Rp ${stats.totalRevenue.toLocaleString()}`} 
+                subValue={`${stats.totalRooms} Rooms Sold`}
+                icon={DollarSign} 
+                color="bg-emerald-50 text-emerald-600"
+              />
+              <StatCard 
+                title="ADR" 
+                value={`Rp ${Math.round(stats.adr).toLocaleString()}`} 
+                subValue="Average Daily Rate"
+                icon={TrendingUp} 
+                color="bg-blue-50 text-blue-600"
+                formula="Total Revenue ÷ Rooms Sold"
+              />
+              <StatCard 
+                title="Occupancy" 
+                value={`${stats.occupancyRate}%`} 
+                subValue="Current Period"
+                icon={Bed} 
+                color="bg-amber-50 text-amber-600"
+                formula="Rooms Sold ÷ Total Available Rooms"
+              />
+              <StatCard 
+                title="RevPAR" 
+                value={`Rp ${Math.round(stats.revPar).toLocaleString()}`} 
+                subValue="Revenue Per Available Room"
+                icon={Users} 
+                color="bg-purple-50 text-purple-600"
+                formula="Total Revenue ÷ Total Available Rooms"
+              />
             </div>
-            <RevenueTrend data={data} filterMonthYear={selectedMonthYear} />
+
+            {/* Charts Section */}
+            <div className="grid grid-cols-1 gap-6 mb-8">
+              <div className="bg-white p-6 rounded-2xl border border-slate-200 shadow-sm">
+                <div className="flex items-center justify-between mb-6">
+                  <h3 className="font-bold text-slate-800">Revenue Trend (Departed)</h3>
+                  <select 
+                    className="text-sm border-none bg-slate-50 rounded-lg px-3 py-1 text-slate-600 focus:ring-0"
+                    value={selectedMonthYear}
+                    onChange={(e) => setSelectedMonthYear(e.target.value)}
+                  >
+                    <option value="All">All Time</option>
+                    {availableMonthsYears.map(my => (
+                      <option key={my} value={my}>{my}</option>
+                    ))}
+                  </select>
+                </div>
+                <RevenueTrend data={data} filterMonthYear={selectedMonthYear} />
+              </div>
+            </div>
+            
+            <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 mb-8">
+              <div className="bg-white p-6 rounded-2xl border border-slate-200 shadow-sm">
+                <h3 className="font-bold text-slate-800 mb-6">Segment Distribution</h3>
+                <SegmentDistribution data={dashboardData} />
+              </div>
+              <div className="bg-white p-6 rounded-2xl border border-slate-200 shadow-sm">
+                <h3 className="font-bold text-slate-800 mb-6">Source of Business (SOB)</h3>
+                <SOBDistribution data={dashboardData} />
+              </div>
+            </div>
+          </>
+        )}
+
+        {activeTab === 'distribution' && (
+          <DistributionModule data={dashboardData} />
+        )}
+
+        {activeTab === 'revenue' && (
+          <RevenueModule data={dashboardData} />
+        )}
+
+        {activeTab === 'reservations' && (
+          <div className="bg-white p-10 rounded-2xl border border-slate-200 shadow-sm flex flex-col items-center justify-center">
+            <h3 className="text-lg font-bold text-slate-800 mb-2">Reservations</h3>
+            <p className="text-slate-500">The reservations module is coming soon.</p>
           </div>
-        </div>
-        
-        <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 mb-8">
-          <div className="bg-white p-6 rounded-2xl border border-slate-200 shadow-sm">
-            <h3 className="font-bold text-slate-800 mb-6">Segment Distribution</h3>
-            <SegmentDistribution data={dashboardData} />
+        )}
+
+        {activeTab === 'guests' && (
+          <div className="bg-white p-10 rounded-2xl border border-slate-200 shadow-sm flex flex-col items-center justify-center">
+            <h3 className="text-lg font-bold text-slate-800 mb-2">Guest Insights</h3>
+            <p className="text-slate-500">The guest insights module is coming soon.</p>
           </div>
-          <div className="bg-white p-6 rounded-2xl border border-slate-200 shadow-sm">
-            <h3 className="font-bold text-slate-800 mb-6">Source of Business (SOB)</h3>
-            <SOBDistribution data={dashboardData} />
-          </div>
-        </div>
+        )}
       </>
     );
   };
