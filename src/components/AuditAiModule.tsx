@@ -1,7 +1,7 @@
 import React, { useState } from 'react';
 import { ReservationReport } from '../types/reservation';
 import { differenceInDays, parseISO, isValid } from 'date-fns';
-import { ShieldAlert, Search, AlertTriangle, Info, CheckCircle2, Loader2 } from 'lucide-react';
+import { ShieldAlert, Search, AlertTriangle, Info, CheckCircle2, Loader2, Download } from 'lucide-react';
 
 interface Props {
   data: ReservationReport[];
@@ -15,6 +15,7 @@ interface Anomaly {
   description: string;
   severity: 'high' | 'medium' | 'low';
   category: 'Ecommerce' | 'Distribution' | 'Revenue' | 'Data Entry';
+  createdBy: string;
 }
 
 const parseDbDate = (dateStr: string) => {
@@ -74,7 +75,8 @@ export const AuditAiModule = ({ data }: Props) => {
             type: 'Suspicious Walk-In Lead Time',
             description: `Walk-in reservation booked ${leadTime} days in advance. Walk-ins typically book on the day of arrival.`,
             severity: 'medium',
-            category: 'Distribution'
+            category: 'Distribution',
+            createdBy: item.CreatedBy || 'Unknown'
           });
         }
 
@@ -87,7 +89,8 @@ export const AuditAiModule = ({ data }: Props) => {
             type: 'Zero/Negative Revenue',
             description: `Active reservation has ${revenue === 0 ? 'zero' : 'negative'} total revenue. Check if this is a comp room or a mapping error.`,
             severity: 'high',
-            category: 'Revenue'
+            category: 'Revenue',
+            createdBy: item.CreatedBy || 'Unknown'
           });
         }
 
@@ -100,7 +103,8 @@ export const AuditAiModule = ({ data }: Props) => {
             type: 'Extremely Low ADR',
             description: `Calculated ADR is very low (${Math.round(adr).toLocaleString()}). Verify rate code or staff discount.`,
             severity: 'high',
-            category: 'Revenue'
+            category: 'Revenue',
+            createdBy: item.CreatedBy || 'Unknown'
           });
         }
 
@@ -113,7 +117,8 @@ export const AuditAiModule = ({ data }: Props) => {
             type: 'Missing Tracking Data',
             description: `Missing ${!sob ? 'Source of Business' : 'Segment'}. This affects distribution and marketing analytics.`,
             severity: 'low',
-            category: 'Ecommerce'
+            category: 'Ecommerce',
+            createdBy: item.CreatedBy || 'Unknown'
           });
         }
 
@@ -126,7 +131,8 @@ export const AuditAiModule = ({ data }: Props) => {
             type: 'Negative Lead Time',
             description: `Reservation created ${Math.abs(leadTime)} days AFTER arrival date.`,
             severity: 'medium',
-            category: 'Data Entry'
+            category: 'Data Entry',
+            createdBy: item.CreatedBy || 'Unknown'
           });
         }
 
@@ -139,7 +145,8 @@ export const AuditAiModule = ({ data }: Props) => {
             type: 'Extended Stay Anomaly',
             description: `Reservation is for ${los} nights. Verify if this is a legitimate long-stay guest or a system error.`,
             severity: 'low',
-            category: 'Revenue'
+            category: 'Revenue',
+            createdBy: item.CreatedBy || 'Unknown'
           });
         }
       });
@@ -152,6 +159,37 @@ export const AuditAiModule = ({ data }: Props) => {
       setIsScanning(false);
       setScanComplete(true);
     }, 2000);
+  };
+
+  const exportToCsv = () => {
+    if (anomalies.length === 0) return;
+
+    const headers = ['Reservation #', 'Guest Name', 'Arrival', 'Category', 'Type', 'Description', 'Severity', 'Created By'];
+    const rows = anomalies.map(a => [
+      a.id,
+      `"${a.guestName}"`,
+      a.arrival.split(' ')[0],
+      a.category,
+      `"${a.type}"`,
+      `"${a.description}"`,
+      a.severity,
+      `"${a.createdBy}"`
+    ]);
+
+    const csvContent = [
+      headers.join(','),
+      ...rows.map(r => r.join(','))
+    ].join('\n');
+
+    const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement('a');
+    link.setAttribute('href', url);
+    link.setAttribute('download', `audit_ai_results_${new Date().toISOString().split('T')[0]}.csv`);
+    link.style.visibility = 'hidden';
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
   };
 
   const getSeverityColor = (severity: string) => {
@@ -211,6 +249,13 @@ export const AuditAiModule = ({ data }: Props) => {
               Audit Results ({anomalies.length} flags found)
             </h3>
             <div className="flex gap-2 text-sm">
+              <button 
+                onClick={exportToCsv}
+                className="flex items-center gap-2 px-3 py-1 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-lg font-medium transition-colors mr-2"
+              >
+                <Download size={16} />
+                Export CSV
+              </button>
               <span className="px-3 py-1 bg-red-50 text-red-700 rounded-full font-medium">
                 {anomalies.filter(a => a.severity === 'high').length} High
               </span>
@@ -250,6 +295,7 @@ export const AuditAiModule = ({ data }: Props) => {
                       <div><span className="font-semibold text-slate-700">Res #:</span> {anomaly.id}</div>
                       <div><span className="font-semibold text-slate-700">Guest:</span> {anomaly.guestName}</div>
                       <div><span className="font-semibold text-slate-700">Arrival:</span> {anomaly.arrival.split(' ')[0]}</div>
+                      <div><span className="font-semibold text-slate-700">Staff:</span> {anomaly.createdBy}</div>
                     </div>
                   </div>
                 </div>

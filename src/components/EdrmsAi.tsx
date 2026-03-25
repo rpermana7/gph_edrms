@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useMemo } from 'react';
 import { GoogleGenAI } from "@google/genai";
 import { ReservationReport } from '../types/reservation';
 import { 
@@ -10,9 +10,21 @@ import {
   Sparkles,
   CheckCircle2,
   AlertCircle,
-  CalendarRange
+  CalendarRange,
+  FileDown,
+  ArrowRight,
+  ShieldAlert
 } from 'lucide-react';
 import { motion } from 'motion/react';
+import jsPDF from 'jspdf';
+import 'jspdf-autotable';
+
+// Extend jsPDF type for autotable
+declare module 'jspdf' {
+  interface jsPDF {
+    autoTable: (options: any) => jsPDF;
+  }
+}
 
 interface EdrmsAiProps {
   data: ReservationReport[];
@@ -29,6 +41,102 @@ export default function EdrmsAi({ data }: EdrmsAiProps) {
   const [insights, setInsights] = useState<AiInsight[]>([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+
+  const otaLeakage = useMemo(() => {
+    const otaReservations = data.filter(item => 
+      item.Segment?.toUpperCase() === 'OTA' || 
+      item.SOB?.toUpperCase() === 'OTA' ||
+      item.ReservationName?.toUpperCase().includes('OTA')
+    );
+
+    const revenue = otaReservations.reduce((sum, item) => sum + Number(item.TotalRevenue || 0), 0);
+    const otaFee = revenue * 0.20;
+    const directFee = revenue * 0.05;
+    const leakage = otaFee - directFee;
+
+    return {
+      revenue,
+      otaFee,
+      directFee,
+      leakage,
+      count: otaReservations.length
+    };
+  }, [data]);
+
+  const exportToPdf = () => {
+    const doc = new jsPDF();
+    const pageWidth = doc.internal.pageSize.getWidth();
+    
+    // Header
+    doc.setFontSize(22);
+    doc.setTextColor(5, 150, 105); // emerald-600
+    doc.text('EDRMS AI Intelligence Report', 14, 22);
+    
+    doc.setFontSize(10);
+    doc.setTextColor(100);
+    doc.text(`Generated on: ${new Date().toLocaleString()}`, 14, 30);
+    doc.text(`Total Reservations Analyzed: ${data.length}`, 14, 35);
+    
+    // OTA Leakage Section
+    doc.setFontSize(16);
+    doc.setTextColor(30);
+    doc.text('OTA Leakage Analysis', 14, 50);
+    
+    doc.autoTable({
+      startY: 55,
+      head: [['Metric', 'Value']],
+      body: [
+        ['Total OTA Reservations', otaLeakage.count.toLocaleString()],
+        ['Total OTA Revenue', `Rp ${otaLeakage.revenue.toLocaleString()}`],
+        ['Estimated OTA Fees (20%)', `Rp ${otaLeakage.otaFee.toLocaleString()}`],
+        ['Potential Direct Fees (5%)', `Rp ${otaLeakage.directFee.toLocaleString()}`],
+        ['Potential Annual Leakage', `Rp ${otaLeakage.leakage.toLocaleString()}`],
+      ],
+      theme: 'striped',
+      headStyles: { fillColor: [5, 150, 105] },
+    });
+
+    // AI Insights
+    if (insights.length > 0) {
+      let currentY = (doc as any).lastAutoTable.finalY + 15;
+      doc.setFontSize(16);
+      doc.text('AI Strategic Insights', 14, currentY);
+      currentY += 10;
+
+      insights.forEach((insight) => {
+        if (currentY > 250) {
+          doc.addPage();
+          currentY = 20;
+        }
+
+        doc.setFontSize(12);
+        doc.setFont('helvetica', 'bold');
+        doc.text(`${insight.category}: ${insight.title}`, 14, currentY);
+        currentY += 7;
+
+        doc.setFont('helvetica', 'normal');
+        doc.setFontSize(10);
+        const analysisLines = doc.splitTextToSize(insight.analysis, pageWidth - 28);
+        doc.text(analysisLines, 14, currentY);
+        currentY += (analysisLines.length * 5) + 5;
+
+        doc.setFont('helvetica', 'bold');
+        doc.text('Strategic Advice:', 14, currentY);
+        currentY += 5;
+        doc.setFont('helvetica', 'normal');
+        
+        insight.advice.forEach(adv => {
+          const advLines = doc.splitTextToSize(`• ${adv}`, pageWidth - 35);
+          doc.text(advLines, 20, currentY);
+          currentY += (advLines.length * 5);
+        });
+        
+        currentY += 10;
+      });
+    }
+
+    doc.save(`edrms_ai_report_${new Date().toISOString().split('T')[0]}.pdf`);
+  };
 
   const generateInsights = async () => {
     if (data.length === 0) return;
@@ -148,14 +256,23 @@ export default function EdrmsAi({ data }: EdrmsAiProps) {
           <p className="text-emerald-50 max-w-2xl leading-relaxed">
             Our advanced AI analyzes your reservation patterns, market segments, and revenue streams to provide actionable strategic advice for your hotel's growth.
           </p>
-          <button 
-            onClick={generateInsights}
-            disabled={loading}
-            className="mt-6 px-6 py-2.5 bg-white text-emerald-700 rounded-xl font-semibold flex items-center gap-2 hover:bg-emerald-50 transition-colors disabled:opacity-50"
-          >
-            {loading ? <Loader2 className="animate-spin" size={20} /> : <Sparkles size={20} />}
-            {insights.length > 0 ? 'Refresh Analysis' : 'Generate Insights'}
-          </button>
+          <div className="flex flex-wrap gap-3 mt-6">
+            <button 
+              onClick={generateInsights}
+              disabled={loading}
+              className="px-6 py-2.5 bg-white text-emerald-700 rounded-xl font-semibold flex items-center gap-2 hover:bg-emerald-50 transition-colors disabled:opacity-50 shadow-sm"
+            >
+              {loading ? <Loader2 className="animate-spin" size={20} /> : <Sparkles size={20} />}
+              {insights.length > 0 ? 'Refresh Analysis' : 'Generate Insights'}
+            </button>
+            <button 
+              onClick={exportToPdf}
+              className="px-6 py-2.5 bg-emerald-500/20 text-white border border-white/30 rounded-xl font-semibold flex items-center gap-2 hover:bg-emerald-500/30 transition-colors shadow-sm"
+            >
+              <FileDown size={20} />
+              Export to PDF
+            </button>
+          </div>
         </div>
         <div className="absolute top-0 right-0 -mt-8 -mr-8 opacity-10">
           <Brain size={240} />
@@ -175,6 +292,77 @@ export default function EdrmsAi({ data }: EdrmsAiProps) {
           <p>{error}</p>
         </div>
       )}
+
+      {/* OTA Leakage Section */}
+      <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+        <div className="lg:col-span-2 bg-white rounded-2xl border border-slate-200 shadow-sm overflow-hidden">
+          <div className="p-6 border-b border-slate-100 flex items-center justify-between bg-slate-50/50">
+            <div className="flex items-center gap-3">
+              <div className="p-2 bg-red-50 text-red-600 rounded-lg">
+                <ShieldAlert size={20} />
+              </div>
+              <div>
+                <h3 className="font-bold text-slate-800">OTA Leakage Analysis</h3>
+                <p className="text-xs text-slate-500">Potential revenue lost to high OTA commissions</p>
+              </div>
+            </div>
+            <div className="text-right">
+              <span className="text-xs font-bold text-slate-400 uppercase tracking-widest">Est. Leakage</span>
+              <p className="text-xl font-black text-red-600">Rp {otaLeakage.leakage.toLocaleString()}</p>
+            </div>
+          </div>
+          <div className="p-6">
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+              <div className="space-y-1">
+                <p className="text-xs font-bold text-slate-400 uppercase">OTA Revenue</p>
+                <p className="text-lg font-bold text-slate-800">Rp {otaLeakage.revenue.toLocaleString()}</p>
+                <p className="text-[10px] text-slate-500">{otaLeakage.count} OTA Reservations</p>
+              </div>
+              <div className="space-y-1">
+                <p className="text-xs font-bold text-slate-400 uppercase">OTA Fees (20%)</p>
+                <p className="text-lg font-bold text-red-500">Rp {otaLeakage.otaFee.toLocaleString()}</p>
+                <p className="text-[10px] text-slate-500">Current estimated cost</p>
+              </div>
+              <div className="space-y-1">
+                <p className="text-xs font-bold text-slate-400 uppercase">Direct Fees (5%)</p>
+                <p className="text-lg font-bold text-emerald-600">Rp {otaLeakage.directFee.toLocaleString()}</p>
+                <p className="text-[10px] text-slate-500">Potential direct cost</p>
+              </div>
+            </div>
+            
+            <div className="mt-8 p-4 bg-emerald-50 rounded-xl border border-emerald-100 flex items-center gap-4">
+              <div className="w-12 h-12 bg-emerald-100 text-emerald-600 rounded-full flex items-center justify-center shrink-0">
+                <TrendingUp size={24} />
+              </div>
+              <div>
+                <p className="text-sm font-bold text-emerald-900">Conversion Opportunity</p>
+                <p className="text-xs text-emerald-700 leading-relaxed">
+                  By shifting these OTA bookings to your direct website, you could save approximately <span className="font-bold">Rp {otaLeakage.leakage.toLocaleString()}</span> in commission fees.
+                </p>
+              </div>
+              <ArrowRight className="text-emerald-400 ml-auto hidden md:block" />
+            </div>
+          </div>
+        </div>
+
+        <div className="bg-gradient-to-br from-slate-800 to-slate-900 rounded-2xl p-6 text-white shadow-lg flex flex-col justify-between">
+          <div>
+            <h4 className="font-bold text-lg mb-2">Direct Strategy</h4>
+            <p className="text-sm text-slate-400 leading-relaxed">
+              Focus on improving your direct booking engine and loyalty programs to capture the {((otaLeakage.leakage / otaLeakage.revenue) * 100 || 0).toFixed(1)}% revenue currently leaking to third parties.
+            </p>
+          </div>
+          <div className="mt-6 pt-6 border-t border-slate-700">
+            <div className="flex items-center justify-between text-xs mb-2">
+              <span className="text-slate-500">Potential Savings</span>
+              <span className="text-emerald-400 font-bold">15% Net</span>
+            </div>
+            <div className="w-full bg-slate-700 h-2 rounded-full overflow-hidden">
+              <div className="bg-emerald-500 h-full w-3/4"></div>
+            </div>
+          </div>
+        </div>
+      </div>
 
       {!loading && insights.length > 0 && (
         <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-4 gap-6">

@@ -24,7 +24,7 @@ const OTAOverviewTable = ({ data }: Props) => {
     const grouped: Record<string, { count: number; nights: number; revenue: number }> = {};
     
     otaReservations.forEach(item => {
-      const name = (item.ReservationName || 'Unknown').trim().toUpperCase();
+      const name = item.ReservationName || 'Unknown';
       if (!grouped[name]) {
         grouped[name] = { count: 0, nights: 0, revenue: 0 };
       }
@@ -36,10 +36,12 @@ const OTAOverviewTable = ({ data }: Props) => {
     const tableRows = Object.keys(grouped).map(name => {
       const stats = grouped[name];
       const adr = stats.nights > 0 ? stats.revenue / stats.nights : 0;
+      const estimatedFee = stats.revenue * 0.2;
       return {
         name,
         ...stats,
-        adr
+        adr,
+        estimatedFee
       };
     }).sort((a, b) => b.revenue - a.revenue);
 
@@ -48,9 +50,10 @@ const OTAOverviewTable = ({ data }: Props) => {
         acc.count += row.count;
         acc.nights += row.nights;
         acc.revenue += row.revenue;
+        acc.estimatedFee += row.estimatedFee;
         return acc;
       },
-      { count: 0, nights: 0, revenue: 0 }
+      { count: 0, nights: 0, revenue: 0, estimatedFee: 0 }
     );
 
     const grandAdr = grandTotals.nights > 0 ? grandTotals.revenue / grandTotals.nights : 0;
@@ -85,16 +88,18 @@ const OTAOverviewTable = ({ data }: Props) => {
               <th className="px-6 py-4 font-bold text-slate-600 text-right">Nights Sold</th>
               <th className="px-6 py-4 font-bold text-slate-600 text-right">ADR</th>
               <th className="px-6 py-4 font-bold text-slate-800 text-right">Total Revenue</th>
+              <th className="px-6 py-4 font-bold text-red-600 text-right whitespace-nowrap">Est. Fee (20%)</th>
             </tr>
           </thead>
           <tbody className="divide-y divide-slate-100">
             {otaData.map((row) => (
-              <tr key={row.name} className="hover:bg-slate-50 transition-colors">
-                <td className="px-6 py-4 font-semibold text-slate-800">{row.name}</td>
+              <tr key={row.name} className="even:bg-slate-50/50 hover:bg-slate-100 transition-colors group">
+                <td className="px-6 py-4 font-semibold text-slate-800 group-hover:text-emerald-700 transition-colors">{row.name}</td>
                 <td className="px-6 py-4 text-right text-slate-600">{row.count.toLocaleString()}</td>
                 <td className="px-6 py-4 text-right text-slate-600">{row.nights.toLocaleString()}</td>
                 <td className="px-6 py-4 text-right font-medium text-slate-700">{formatCurrency(row.adr)}</td>
                 <td className="px-6 py-4 text-right font-bold text-emerald-600">{formatCurrency(row.revenue)}</td>
+                <td className="px-6 py-4 text-right font-medium text-red-600">{formatCurrency(row.estimatedFee)}</td>
               </tr>
             ))}
             <tr className="bg-slate-50 font-bold border-t-2 border-slate-200">
@@ -103,6 +108,7 @@ const OTAOverviewTable = ({ data }: Props) => {
               <td className="px-6 py-4 text-right text-slate-800">{totals.nights.toLocaleString()}</td>
               <td className="px-6 py-4 text-right text-slate-800">{formatCurrency(totals.adr)}</td>
               <td className="px-6 py-4 text-right text-emerald-700">{formatCurrency(totals.revenue)}</td>
+              <td className="px-6 py-4 text-right text-red-700">{formatCurrency(totals.estimatedFee)}</td>
             </tr>
           </tbody>
         </table>
@@ -221,10 +227,10 @@ export const DistributionModule = ({ data }: Props) => {
               </tr>
             </thead>
             <tbody className="divide-y divide-slate-100">
-              {tableData.map((segment) => (
+              {tableData.map((segment, idx) => (
                 <React.Fragment key={segment.name}>
                   <tr 
-                    className="hover:bg-slate-50 transition-colors cursor-pointer"
+                    className={`transition-colors cursor-pointer hover:bg-slate-100 ${idx % 2 === 1 ? 'bg-slate-50/30' : 'bg-white'}`}
                     onClick={() => toggleSegment(segment.name)}
                   >
                     <td className="px-6 py-3 font-semibold text-slate-800 flex items-center gap-2">
@@ -241,7 +247,7 @@ export const DistributionModule = ({ data }: Props) => {
                     </td>
                   </tr>
                   {expandedSegments[segment.name] && segment.sobs.map((sob) => (
-                    <tr key={`${segment.name}-${sob.name}`} className="bg-slate-50/30 hover:bg-slate-50 transition-colors">
+                    <tr key={`${segment.name}-${sob.name}`} className="bg-slate-100/20 hover:bg-slate-200/50 transition-colors">
                       <td className="px-6 py-3 pl-12 text-slate-600 flex items-center gap-2">
                         <div className="w-1.5 h-1.5 rounded-full bg-slate-300"></div>
                         {sob.name}
