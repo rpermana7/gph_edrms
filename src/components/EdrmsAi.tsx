@@ -9,7 +9,8 @@ import {
   Loader2, 
   Sparkles,
   CheckCircle2,
-  AlertCircle
+  AlertCircle,
+  CalendarRange
 } from 'lucide-react';
 import { motion } from 'motion/react';
 
@@ -18,7 +19,7 @@ interface EdrmsAiProps {
 }
 
 interface AiInsight {
-  category: 'Ecommerce' | 'Distribution' | 'Revenue';
+  category: 'Ecommerce' | 'Distribution' | 'Revenue' | 'Seasonality';
   title: string;
   analysis: string;
   advice: string[];
@@ -56,10 +57,16 @@ export default function EdrmsAi({ data }: EdrmsAiProps) {
           const leadTime = Math.max(0, Math.floor((arrival.getTime() - created.getTime()) / (1000 * 60 * 60 * 24)));
           return sum + leadTime;
         }, 0) / data.length,
+        monthlyDistribution: data.reduce((acc: any, item) => {
+          if (!item.Arrival) return acc;
+          const month = new Date(item.Arrival).toLocaleString('default', { month: 'short' });
+          acc[month] = (acc[month] || 0) + 1;
+          return acc;
+        }, {})
       };
 
       const prompt = `
-        Analyze the following hotel reservation performance data and provide strategic advice for three categories: Ecommerce, Distribution, and Revenue.
+        Analyze the following hotel reservation performance data and provide strategic advice for four categories: Ecommerce, Distribution, Revenue, and Seasonality.
         
         Data Summary:
         - Total Reservations: ${summary.totalReservations}
@@ -67,6 +74,7 @@ export default function EdrmsAi({ data }: EdrmsAiProps) {
         - Market Segments: ${JSON.stringify(summary.segments)}
         - Source of Business: ${JSON.stringify(summary.sources)}
         - Average Lead Time: ${summary.averageLeadTime.toFixed(1)} days
+        - Monthly Arrival Distribution: ${JSON.stringify(summary.monthlyDistribution)}
         
         Format the response as a JSON array of objects with the following structure:
         [
@@ -84,6 +92,12 @@ export default function EdrmsAi({ data }: EdrmsAiProps) {
           },
           {
             "category": "Revenue",
+            "title": "...",
+            "analysis": "...",
+            "advice": ["...", "..."]
+          },
+          {
+            "category": "Seasonality",
             "title": "...",
             "analysis": "...",
             "advice": ["...", "..."]
@@ -116,6 +130,7 @@ export default function EdrmsAi({ data }: EdrmsAiProps) {
       case 'Ecommerce': return <ShoppingBag className="text-blue-500" />;
       case 'Distribution': return <Globe className="text-emerald-500" />;
       case 'Revenue': return <TrendingUp className="text-purple-500" />;
+      case 'Seasonality': return <CalendarRange className="text-orange-500" />;
       default: return <Brain className="text-slate-500" />;
     }
   };
@@ -162,7 +177,7 @@ export default function EdrmsAi({ data }: EdrmsAiProps) {
       )}
 
       {!loading && insights.length > 0 && (
-        <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+        <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-4 gap-6">
           {insights.map((insight, idx) => (
             <motion.div 
               key={insight.category}
