@@ -39,6 +39,8 @@ export const AuditAiModule = ({ data }: Props) => {
   const [savedScans, setSavedScans] = useState<AuditScan[]>([]);
   const [showHistory, setShowHistory] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [selectedYear, setSelectedYear] = useState<number>(new Date().getFullYear());
+  const [scannedCount, setScannedCount] = useState<number>(0);
 
   useEffect(() => {
     fetchSavedScans();
@@ -67,7 +69,7 @@ export const AuditAiModule = ({ data }: Props) => {
         .from('audit_scans')
         .insert([{
           anomalies,
-          total_records: data.length
+          total_records: scannedCount
         }]);
 
       if (error) throw error;
@@ -97,14 +99,45 @@ export const AuditAiModule = ({ data }: Props) => {
     }
   };
 
-  const runAudit = () => {    setIsScanning(true);
+  const runAudit = async () => {
+    setIsScanning(true);
     setScanComplete(false);
+    setError(null);
     
-    // Simulate AI scanning delay for UX
-    setTimeout(() => {
+    try {
+      // Fetch ALL records for the selected year from Supabase
+      // We use pagination to bypass the 1000 row limit
+      let allYearData: ReservationReport[] = [];
+      let page = 0;
+      const pageSize = 1000;
+      let hasMore = true;
+
+      const startDate = `${selectedYear}-01-01`;
+      const endDate = `${selectedYear}-12-31`;
+
+      while (hasMore) {
+        const { data: pageData, error: fetchError } = await supabase
+          .from('reservation_report')
+          .select('*')
+          .gte('Arrival', startDate)
+          .lte('Arrival', endDate)
+          .range(page * pageSize, (page + 1) * pageSize - 1);
+
+        if (fetchError) throw fetchError;
+        
+        if (pageData && pageData.length > 0) {
+          allYearData = [...allYearData, ...pageData];
+          page++;
+          if (pageData.length < pageSize) hasMore = false;
+        } else {
+          hasMore = false;
+        }
+      }
+
+      setScannedCount(allYearData.length);
       const results: Anomaly[] = [];
       
-      data.forEach(item => {
+      allYearData.forEach(item => {
         const arrival = parseDbDate(item.Arrival);
         const created = parseDbDate(item.CreatedDate);
         const departure = parseDbDate(item.Departure);
@@ -112,8 +145,10 @@ export const AuditAiModule = ({ data }: Props) => {
         const sob = item.SOB || '';
         const segment = item.Segment || '';
         const revenue = Number(item.TotalRevenue || 0);
+        const roomRate = Number(item.RoomRate || 0);
         const nights = Number(item.Night || 1);
         const rooms = Number(item.RoomQuantity || 1);
+        const adults = Number(item.Adult || 0);
         const status = (item.Status || '').toLowerCase();
         
         const isCanceledOrNoShow = status.includes('cancel') || status.includes('no show');
@@ -215,6 +250,63 @@ export const AuditAiModule = ({ data }: Props) => {
             createdBy: item.CreatedBy || 'Unknown'
           });
         }
+
+        // Rule 7: Extremely High Room Rate
+        if (roomRate > 10000000 && !isCanceledOrNoShow) {
+          results.push({
+            id: item.ReservationNumber?.toString() || 'Unknown',
+            guestName: item.GuestName || 'Unknown',
+            arrival: item.Arrival || 'Unknown',
+            type: 'Extremely High Rate',
+            description: `Room rate is unusually high (Rp ${roomRate.toLocaleString()}). Check for data entry error or currency mismatch.`,
+            severity: 'medium',
+            category: 'Revenue',
+            createdBy: item.CreatedBy || 'Unknown'
+          });
+        }
+
+        // Rule 8: Adults = 0
+        if (adults === 0 && !isCanceledOrNoShow) {
+          results.push({
+            id: item.ReservationNumber?.toString() || 'Unknown',
+            guestName: item.GuestName || 'Unknown',
+            arrival: item.Arrival || 'Unknown',
+            type: 'Zero Adults',
+            description: `Reservation has 0 adults. Check if this is a child-only booking or a missing field.`,
+            severity: 'low',
+            category: 'Data Entry',
+            createdBy: item.CreatedBy || 'Unknown'
+          });
+        }
+
+        // Rule 9: Bulk Booking Check
+        if (rooms > 5 && !isCanceledOrNoShow && segment.toLowerCase() !== 'group') {
+          results.push({
+            id: item.ReservationNumber?.toString() || 'Unknown',
+            guestName: item.GuestName || 'Unknown',
+            arrival: item.Arrival || 'Unknown',
+            type: 'Large Room Quantity',
+            description: `Reservation for ${rooms} rooms but not categorized as 'Group'. Verify segment classification.`,
+            severity: 'low',
+            category: 'Distribution',
+            createdBy: item.CreatedBy || 'Unknown'
+          });
+        }
+
+        // Rule 10: Revenue Inconsistency
+        const expectedRevenue = roomRate * los * rooms;
+        if (revenue > 0 && Math.abs(revenue - expectedRevenue) > (expectedRevenue * 0.1) && !isCanceledOrNoShow) {
+          results.push({
+            id: item.ReservationNumber?.toString() || 'Unknown',
+            guestName: item.GuestName || 'Unknown',
+            arrival: item.Arrival || 'Unknown',
+            type: 'Revenue Inconsistency',
+            description: `Total revenue (Rp ${revenue.toLocaleString()}) differs significantly from expected (Rp ${expectedRevenue.toLocaleString()}) based on rate and nights.`,
+            severity: 'medium',
+            category: 'Revenue',
+            createdBy: item.CreatedBy || 'Unknown'
+          });
+        }
       });
       
       // Sort by severity (high -> medium -> low)
@@ -222,9 +314,13 @@ export const AuditAiModule = ({ data }: Props) => {
       results.sort((a, b) => severityWeight[b.severity] - severityWeight[a.severity]);
       
       setAnomalies(results);
-      setIsScanning(false);
       setScanComplete(true);
-    }, 2000);
+    } catch (err: any) {
+      console.error('Audit Error:', err);
+      setError(`Failed to run audit: ${err.message}`);
+    } finally {
+      setIsScanning(false);
+    }
   };
 
   const exportToCsv = (scanData?: AuditScan) => {
@@ -264,7 +360,7 @@ export const AuditAiModule = ({ data }: Props) => {
     try {
       const activeAnomalies = scanData ? scanData.anomalies : anomalies;
       const activeDate = scanData ? new Date(scanData.created_at).toLocaleString() : new Date().toLocaleString();
-      const activeTotal = scanData ? scanData.total_records : data.length;
+      const activeTotal = scanData ? scanData.total_records : scannedCount;
 
       const doc = new jsPDF();
       const pageWidth = doc.internal.pageSize.getWidth();
@@ -367,26 +463,40 @@ export const AuditAiModule = ({ data }: Props) => {
           Our AI engine scans all your reservation records to identify red flags, data entry errors, and revenue leakage across Ecommerce, Distribution, and Revenue categories.
         </p>
         
-        <div className="flex flex-wrap gap-3 justify-center mt-6">
-          <button 
-            onClick={runAudit}
-            disabled={isScanning}
-            className={`px-6 py-3 rounded-xl font-bold text-white transition-all flex items-center justify-center gap-2 ${
-              isScanning ? 'bg-emerald-400 cursor-not-allowed' : 'bg-emerald-600 hover:bg-emerald-700 shadow-md hover:shadow-lg'
-            }`}
-          >
-            {isScanning ? (
-              <>
-                <Loader2 size={20} className="animate-spin" />
-                Scanning {data.length} records...
-              </>
-            ) : (
-              <>
-                <Search size={20} />
-                {scanComplete ? 'Run Audit Again' : 'Scan All Records'}
-              </>
-            )}
-          </button>
+        <div className="flex flex-col items-center gap-6 mb-8">
+          <div className="flex items-center gap-3 bg-slate-50 p-2 rounded-xl border border-slate-200">
+            <span className="text-xs font-bold text-slate-400 uppercase tracking-widest px-2">Audit Year:</span>
+            <select 
+              value={selectedYear}
+              onChange={(e) => setSelectedYear(parseInt(e.target.value))}
+              className="bg-white border border-slate-200 rounded-lg px-4 py-2 text-sm font-bold text-slate-700 focus:ring-2 focus:ring-emerald-500 focus:border-emerald-500 outline-none"
+            >
+              {[2024, 2025, 2026].map(year => (
+                <option key={year} value={year}>{year}</option>
+              ))}
+            </select>
+          </div>
+
+          <div className="flex flex-wrap gap-3 justify-center">
+            <button 
+              onClick={runAudit}
+              disabled={isScanning}
+              className={`px-8 py-3.5 rounded-xl font-bold text-white transition-all flex items-center justify-center gap-2 ${
+                isScanning ? 'bg-emerald-400 cursor-not-allowed' : 'bg-emerald-600 hover:bg-emerald-700 shadow-md hover:shadow-lg'
+              }`}
+            >
+              {isScanning ? (
+                <>
+                  <Loader2 size={20} className="animate-spin" />
+                  Scanning All Records for {selectedYear}...
+                </>
+              ) : (
+                <>
+                  <Search size={20} />
+                  {scanComplete ? 'Run New Audit' : `Scan All ${selectedYear} Records`}
+                </>
+              )}
+            </button>
 
           {scanComplete && (
             <button 
@@ -408,6 +518,7 @@ export const AuditAiModule = ({ data }: Props) => {
           </button>
         </div>
       </div>
+    </div>
 
       <AnimatePresence>
         {showHistory && (

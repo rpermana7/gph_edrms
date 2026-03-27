@@ -36,6 +36,7 @@ export default function EdrmsAi({ data }: EdrmsAiProps) {
   const [error, setError] = useState<string | null>(null);
   const [savedReports, setSavedReports] = useState<AuditReport[]>([]);
   const [showHistory, setShowHistory] = useState(false);
+  const [conversionRate, setConversionRate] = useState(100);
 
   useEffect(() => {
     fetchSavedReports();
@@ -570,9 +571,26 @@ export default function EdrmsAi({ data }: EdrmsAiProps) {
                 <TrendingUp size={24} />
               </div>
               <div>
-                <p className="text-sm font-bold text-emerald-900">Conversion Opportunity</p>
+                <p className="text-sm font-bold text-emerald-900">Conversion Opportunity ({conversionRate}%)</p>
+                <div className="mt-2 mb-4">
+                  <input 
+                    type="range" 
+                    min="0" 
+                    max="100" 
+                    value={conversionRate} 
+                    onChange={(e) => setConversionRate(parseInt(e.target.value))}
+                    className="w-full h-2 bg-emerald-200 rounded-lg appearance-none cursor-pointer accent-emerald-600"
+                  />
+                  <div className="flex justify-between text-[10px] text-emerald-600 font-bold mt-1">
+                    <span>0%</span>
+                    <span>25%</span>
+                    <span>50%</span>
+                    <span>75%</span>
+                    <span>100%</span>
+                  </div>
+                </div>
                 <p className="text-xs text-emerald-700 leading-relaxed">
-                  By shifting these OTA bookings to your direct website, you could save approximately <span className="font-bold">Rp {otaLeakage.leakage.toLocaleString()}</span> in commission fees.
+                  By shifting <span className="font-bold">{conversionRate}%</span> of these OTA bookings to your direct website, you could save approximately <span className="font-bold">Rp {(otaLeakage.leakage * (conversionRate / 100)).toLocaleString()}</span> in commission fees.
                 </p>
               </div>
               <ArrowRight className="text-emerald-400 ml-auto hidden md:block" />
@@ -589,11 +607,14 @@ export default function EdrmsAi({ data }: EdrmsAiProps) {
           </div>
           <div className="mt-6 pt-6 border-t border-slate-700">
             <div className="flex items-center justify-between text-xs mb-2">
-              <span className="text-slate-500">Potential Savings</span>
-              <span className="text-emerald-400 font-bold">15% Net</span>
+              <span className="text-slate-500">Potential Savings ({conversionRate}%)</span>
+              <span className="text-emerald-400 font-bold">Rp {(otaLeakage.leakage * (conversionRate / 100)).toLocaleString()}</span>
             </div>
             <div className="w-full bg-slate-700 h-2 rounded-full overflow-hidden">
-              <div className="bg-emerald-500 h-full w-3/4"></div>
+              <div 
+                className="bg-emerald-500 h-full transition-all duration-500" 
+                style={{ width: `${conversionRate}%` }}
+              ></div>
             </div>
           </div>
         </div>
