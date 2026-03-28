@@ -56,6 +56,67 @@ export const AntiFraudAi = ({ data: initialData }: Props) => {
   const [selectedYear, setSelectedYear] = useState<number>(new Date().getFullYear());
   const [error, setError] = useState<string | null>(null);
   const [scannedCount, setScannedCount] = useState<number>(0);
+  const [isSaving, setIsSaving] = useState(false);
+  const [savedScans, setSavedScans] = useState<any[]>([]);
+  const [showHistory, setShowHistory] = useState(false);
+
+  useEffect(() => {
+    fetchSavedScans();
+  }, []);
+
+  const fetchSavedScans = async () => {
+    try {
+      const { data: scans, error } = await supabase
+        .from('fraud_scans')
+        .select('*')
+        .order('created_at', { ascending: false });
+
+      if (error) throw error;
+      setSavedScans(scans || []);
+    } catch (err) {
+      console.error('Error fetching scans:', err);
+    }
+  };
+
+  const saveScan = async () => {
+    if (frauds.length === 0 && !scanComplete) return;
+    
+    setIsSaving(true);
+    try {
+      const { error } = await supabase
+        .from('fraud_scans')
+        .insert([{
+          frauds,
+          total_records: scannedCount,
+          scanned_year: selectedYear === 0 ? null : selectedYear
+        }]);
+
+      if (error) throw error;
+      await fetchSavedScans();
+      alert('Fraud scan results saved successfully!');
+    } catch (err) {
+      console.error('Error saving scan:', err);
+      setError('Failed to save fraud scan results.');
+    } finally {
+      setIsSaving(false);
+    }
+  };
+
+  const deleteScan = async (id: string) => {
+    if (!confirm('Are you sure you want to delete this scan record?')) return;
+    
+    try {
+      const { error } = await supabase
+        .from('fraud_scans')
+        .delete()
+        .match({ id });
+
+      if (error) throw error;
+      setSavedScans(prev => prev.filter(s => s.id !== id));
+    } catch (err) {
+      console.error('Error deleting scan:', err);
+    }
+  };
 
   const runFraudAudit = async () => {
     setIsScanning(true);
@@ -68,17 +129,20 @@ export const AntiFraudAi = ({ data: initialData }: Props) => {
       const pageSize = 1000;
       let hasMore = true;
 
-      // Filter by CreatedDate year as requested
-      const startDate = `${selectedYear}-01-01`;
-      const endDate = `${selectedYear}-12-31`;
-
       while (hasMore) {
-        const { data: pageData, error: fetchError } = await supabase
+        let query = supabase
           .from('reservation_report')
           .select('*')
-          .gte('CreatedDate', startDate)
-          .lte('CreatedDate', endDate)
           .range(page * pageSize, (page + 1) * pageSize - 1);
+
+        // Filter by CreatedDate year if not All Time
+        if (selectedYear !== 0) {
+          const startDate = `${selectedYear}-01-01`;
+          const endDate = `${selectedYear}-12-31`;
+          query = query.gte('CreatedDate', startDate).lte('CreatedDate', endDate);
+        }
+
+        const { data: pageData, error: fetchError } = await query;
 
         if (fetchError) throw fetchError;
         
@@ -206,10 +270,10 @@ export const AntiFraudAi = ({ data: initialData }: Props) => {
     }
   };
 
-  const exportToCsv = () => {
-    if (frauds.length === 0) return;
+  const exportToCsv = (dataToExport: FraudAnomaly[], year: number | string) => {
+    if (dataToExport.length === 0) return;
     const headers = ['Res #', 'Created Date', 'Checkin', 'Checkout', 'LOS', 'Rate Code', 'Room Rate', 'Expected Rev', 'Actual Rev', 'Guest', 'Staff', 'Fraud Type', 'Description'];
-    const rows = frauds.map(f => [
+    const rows = dataToExport.map(f => [
       f.reservationNumber,
       f.createdDate,
       f.arrival,
@@ -230,8 +294,43 @@ export const AntiFraudAi = ({ data: initialData }: Props) => {
     const url = URL.createObjectURL(blob);
     const link = document.createElement('a');
     link.setAttribute('href', url);
-    link.setAttribute('download', `antifraud_report_${selectedYear}.csv`);
+    link.setAttribute('download', `antifraud_report_${year}.csv`);
     link.click();
+  };
+
+  const exportToPdf = (dataToExport: FraudAnomaly[], year: number | string) => {
+    const doc = new jsPDF('l', 'mm', 'a4');
+    const margin = 15;
+    
+    doc.setFontSize(18);
+    doc.text('ANTIFRAUD AI REPORT', margin, 20);
+    doc.setFontSize(10);
+    doc.text(`Scan Year: ${year === 0 ? 'All Time' : year}`, margin, 28);
+    doc.text(`Generated: ${format(new Date(), 'dd/MM/yyyy HH:mm:ss')}`, margin, 34);
+    doc.text(`Total Anomalies: ${dataToExport.length}`, margin, 40);
+
+    autoTable(doc, {
+      startY: 45,
+      head: [['Res #', 'Created', 'Checkin', 'Checkout', 'LOS', 'Rate', 'Exp Rev', 'Act Rev', 'Guest', 'Staff', 'Type']],
+      body: dataToExport.map(f => [
+        f.reservationNumber,
+        f.createdDate.split(' ')[0],
+        f.arrival.split(' ')[0],
+        f.departure.split(' ')[0],
+        f.los,
+        f.roomRate.toLocaleString(),
+        f.expectedRevenue.toLocaleString(),
+        f.actualRevenue.toLocaleString(),
+        f.guestName.substring(0, 15),
+        f.createdBy.substring(0, 15),
+        f.fraudType
+      ]),
+      margin: { top: margin, left: margin, right: margin, bottom: margin },
+      styles: { fontSize: 8, cellPadding: 2 },
+      headStyles: { fillColor: [220, 38, 38] }
+    });
+
+    doc.save(`antifraud_report_${year}.pdf`);
   };
 
   return (
@@ -246,17 +345,30 @@ export const AntiFraudAi = ({ data: initialData }: Props) => {
         </p>
         
         <div className="flex flex-col items-center gap-6 mb-8">
-          <div className="flex items-center gap-3 bg-slate-50 p-2 rounded-xl border border-slate-200">
-            <span className="text-xs font-bold text-slate-400 uppercase tracking-widest px-2">Creation Year:</span>
-            <select 
-              value={selectedYear}
-              onChange={(e) => setSelectedYear(parseInt(e.target.value))}
-              className="bg-white border border-slate-200 rounded-lg px-4 py-2 text-sm font-bold text-slate-700 focus:ring-2 focus:ring-red-500 focus:border-red-500 outline-none"
+          <div className="flex items-center gap-4">
+            <div className="flex items-center gap-3 bg-slate-50 p-2 rounded-xl border border-slate-200">
+              <span className="text-xs font-bold text-slate-400 uppercase tracking-widest px-2">Creation Year:</span>
+              <select 
+                value={selectedYear}
+                onChange={(e) => setSelectedYear(parseInt(e.target.value))}
+                className="bg-white border border-slate-200 rounded-lg px-4 py-2 text-sm font-bold text-slate-700 focus:ring-2 focus:ring-red-500 focus:border-red-500 outline-none"
+              >
+                <option value={0}>ALL TIME</option>
+                {[2024, 2025, 2026].map(year => (
+                  <option key={year} value={year}>{year}</option>
+                ))}
+              </select>
+            </div>
+
+            <button 
+              onClick={() => setShowHistory(!showHistory)}
+              className={`flex items-center gap-2 px-4 py-2 rounded-xl font-bold transition-all border ${
+                showHistory ? 'bg-slate-800 text-white border-slate-800' : 'bg-white text-slate-600 border-slate-200 hover:border-slate-300'
+              }`}
             >
-              {[2024, 2025, 2026].map(year => (
-                <option key={year} value={year}>{year}</option>
-              ))}
-            </select>
+              <History size={18} />
+              {showHistory ? 'Hide History' : 'View History'}
+            </button>
           </div>
 
           <button 
@@ -269,17 +381,78 @@ export const AntiFraudAi = ({ data: initialData }: Props) => {
             {isScanning ? (
               <>
                 <Loader2 size={20} className="animate-spin" />
-                Scanning {selectedYear} Creations...
+                Scanning {selectedYear === 0 ? 'All Time' : selectedYear} Creations...
               </>
             ) : (
               <>
                 <Search size={20} />
-                {scanComplete ? 'Run New Scan' : `Scan Potential Fraud (${selectedYear})`}
+                {scanComplete ? 'Run New Scan' : `Scan Potential Fraud (${selectedYear === 0 ? 'All Time' : selectedYear})`}
               </>
             )}
           </button>
         </div>
       </div>
+
+      <AnimatePresence>
+        {showHistory && (
+          <motion.div 
+            initial={{ opacity: 0, y: -20 }}
+            animate={{ opacity: 1, y: 0 }}
+            exit={{ opacity: 0, y: -20 }}
+            className="bg-white rounded-2xl border border-slate-200 shadow-sm overflow-hidden"
+          >
+            <div className="p-4 border-b border-slate-100 bg-slate-50 flex items-center justify-between">
+              <h3 className="font-bold text-slate-800 flex items-center gap-2">
+                <History size={18} className="text-slate-400" />
+                Saved Fraud Scans
+              </h3>
+            </div>
+            <div className="divide-y divide-slate-100 max-h-[400px] overflow-y-auto">
+              {savedScans.length === 0 ? (
+                <div className="p-8 text-center text-slate-400 italic">
+                  No saved scans found.
+                </div>
+              ) : (
+                savedScans.map((scan) => (
+                  <div key={scan.id} className="p-4 hover:bg-slate-50 transition-colors flex items-center justify-between">
+                    <div>
+                      <div className="font-bold text-slate-800">
+                        {scan.scanned_year ? `Year: ${scan.scanned_year}` : 'All Time Scan'}
+                      </div>
+                      <div className="text-xs text-slate-500">
+                        {format(new Date(scan.created_at), 'dd MMM yyyy, HH:mm')} • {scan.frauds.length} anomalies found
+                      </div>
+                    </div>
+                    <div className="flex items-center gap-2">
+                      <button 
+                        onClick={() => exportToCsv(scan.frauds, scan.scanned_year || 'all_time')}
+                        className="p-2 text-slate-400 hover:text-emerald-600 hover:bg-emerald-50 rounded-lg transition-all"
+                        title="Download CSV"
+                      >
+                        <FileDown size={18} />
+                      </button>
+                      <button 
+                        onClick={() => exportToPdf(scan.frauds, scan.scanned_year || 'all_time')}
+                        className="p-2 text-slate-400 hover:text-red-600 hover:bg-red-50 rounded-lg transition-all"
+                        title="Download PDF"
+                      >
+                        <Download size={18} />
+                      </button>
+                      <button 
+                        onClick={() => deleteScan(scan.id)}
+                        className="p-2 text-slate-400 hover:text-red-600 hover:bg-red-50 rounded-lg transition-all"
+                        title="Delete Record"
+                      >
+                        <Trash2 size={18} />
+                      </button>
+                    </div>
+                  </div>
+                ))
+              )}
+            </div>
+          </motion.div>
+        )}
+      </AnimatePresence>
 
       {error && (
         <div className="bg-red-50 border border-red-100 rounded-xl p-4 text-red-700 text-sm flex items-center gap-3">
@@ -294,13 +467,30 @@ export const AntiFraudAi = ({ data: initialData }: Props) => {
             <h3 className="text-lg font-bold text-slate-800">
               Fraud Detection Results ({frauds.length} anomalies)
             </h3>
-            <button 
-              onClick={exportToCsv}
-              className="flex items-center gap-2 px-4 py-2 bg-slate-800 text-white rounded-xl font-bold hover:bg-slate-700 transition-all shadow-md"
-            >
-              <Download size={18} />
-              Export Report
-            </button>
+            <div className="flex items-center gap-3">
+              <button 
+                onClick={saveScan}
+                disabled={isSaving}
+                className="flex items-center gap-2 px-4 py-2 bg-emerald-600 text-white rounded-xl font-bold hover:bg-emerald-700 transition-all shadow-md disabled:opacity-50"
+              >
+                {isSaving ? <Loader2 size={18} className="animate-spin" /> : <Save size={18} />}
+                Save Result
+              </button>
+              <button 
+                onClick={() => exportToCsv(frauds, selectedYear || 'all_time')}
+                className="flex items-center gap-2 px-4 py-2 bg-slate-800 text-white rounded-xl font-bold hover:bg-slate-700 transition-all shadow-md"
+              >
+                <Download size={18} />
+                Export CSV
+              </button>
+              <button 
+                onClick={() => exportToPdf(frauds, selectedYear || 'all_time')}
+                className="flex items-center gap-2 px-4 py-2 bg-red-600 text-white rounded-xl font-bold hover:bg-red-700 transition-all shadow-md"
+              >
+                <FileDown size={18} />
+                Export PDF
+              </button>
+            </div>
           </div>
 
           <div className="bg-white rounded-2xl border border-slate-200 shadow-sm overflow-hidden">
