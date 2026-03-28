@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
 import { ReservationReport } from '../types/reservation';
 import { differenceInDays, parseISO, isValid, format } from 'date-fns';
 import { 
@@ -59,6 +59,10 @@ export const AntiFraudAi = ({ data: initialData }: Props) => {
   const [isSaving, setIsSaving] = useState(false);
   const [savedScans, setSavedScans] = useState<any[]>([]);
   const [showHistory, setShowHistory] = useState(false);
+
+  const totalPotentialLoss = useMemo(() => {
+    return frauds.reduce((sum, f) => sum + Math.max(0, f.expectedRevenue - f.actualRevenue), 0);
+  }, [frauds]);
 
   useEffect(() => {
     fetchSavedScans();
@@ -272,7 +276,7 @@ export const AntiFraudAi = ({ data: initialData }: Props) => {
 
   const exportToCsv = (dataToExport: FraudAnomaly[], year: number | string) => {
     if (dataToExport.length === 0) return;
-    const headers = ['Res #', 'Created Date', 'Checkin', 'Checkout', 'LOS', 'Rate Code', 'Room Rate', 'Expected Rev', 'Actual Rev', 'Guest', 'Staff', 'Fraud Type', 'Description'];
+    const headers = ['Res #', 'Created Date', 'Checkin', 'Checkout', 'LOS', 'Rate Code', 'Room Rate', 'Expected Rev', 'Actual Rev', 'Discrepancy', 'Guest', 'Staff', 'Fraud Type', 'Description'];
     const rows = dataToExport.map(f => [
       f.reservationNumber,
       f.createdDate,
@@ -283,6 +287,7 @@ export const AntiFraudAi = ({ data: initialData }: Props) => {
       f.roomRate,
       f.expectedRevenue,
       f.actualRevenue,
+      Math.max(0, f.expectedRevenue - f.actualRevenue),
       `"${f.guestName}"`,
       `"${f.createdBy}"`,
       f.fraudType,
@@ -311,7 +316,7 @@ export const AntiFraudAi = ({ data: initialData }: Props) => {
 
     autoTable(doc, {
       startY: 45,
-      head: [['Res #', 'Created', 'Checkin', 'Checkout', 'LOS', 'Rate', 'Exp Rev', 'Act Rev', 'Guest', 'Staff', 'Type']],
+      head: [['Res #', 'Created', 'Checkin', 'Checkout', 'LOS', 'Rate', 'Exp Rev', 'Act Rev', 'Discrepancy', 'Guest', 'Staff', 'Type']],
       body: dataToExport.map(f => [
         f.reservationNumber,
         f.createdDate.split(' ')[0],
@@ -321,12 +326,13 @@ export const AntiFraudAi = ({ data: initialData }: Props) => {
         f.roomRate.toLocaleString(),
         f.expectedRevenue.toLocaleString(),
         f.actualRevenue.toLocaleString(),
+        Math.max(0, f.expectedRevenue - f.actualRevenue).toLocaleString(),
         f.guestName.substring(0, 15),
         f.createdBy.substring(0, 15),
         f.fraudType
       ]),
       margin: { top: margin, left: margin, right: margin, bottom: margin },
-      styles: { fontSize: 8, cellPadding: 2 },
+      styles: { fontSize: 7, cellPadding: 1.5 },
       headStyles: { fillColor: [220, 38, 38] }
     });
 
@@ -462,7 +468,22 @@ export const AntiFraudAi = ({ data: initialData }: Props) => {
       )}
 
       {scanComplete && (
-        <div className="space-y-4">
+        <div className="space-y-6">
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+            <div className="bg-white p-6 rounded-2xl border border-slate-200 shadow-sm">
+              <div className="text-xs font-bold text-slate-400 uppercase tracking-widest mb-2">Total Anomalies</div>
+              <div className="text-3xl font-bold text-slate-800">{frauds.length}</div>
+            </div>
+            <div className="bg-white p-6 rounded-2xl border border-slate-200 shadow-sm">
+              <div className="text-xs font-bold text-slate-400 uppercase tracking-widest mb-2">Total Potential Loss</div>
+              <div className="text-3xl font-bold text-red-600">Rp {totalPotentialLoss.toLocaleString()}</div>
+            </div>
+            <div className="bg-white p-6 rounded-2xl border border-slate-200 shadow-sm">
+              <div className="text-xs font-bold text-slate-400 uppercase tracking-widest mb-2">Scanned Records</div>
+              <div className="text-3xl font-bold text-slate-800">{scannedCount.toLocaleString()}</div>
+            </div>
+          </div>
+
           <div className="flex items-center justify-between">
             <h3 className="text-lg font-bold text-slate-800">
               Fraud Detection Results ({frauds.length} anomalies)
@@ -507,6 +528,7 @@ export const AntiFraudAi = ({ data: initialData }: Props) => {
                     <th className="px-4 py-3 font-bold text-slate-600">Room Rate</th>
                     <th className="px-4 py-3 font-bold text-slate-600">Expected Rev</th>
                     <th className="px-4 py-3 font-bold text-slate-600">Actual Rev</th>
+                    <th className="px-4 py-3 font-bold text-slate-600">Discrepancy</th>
                     <th className="px-4 py-3 font-bold text-slate-600">Guest</th>
                     <th className="px-4 py-3 font-bold text-slate-600">Staff</th>
                     <th className="px-4 py-3 font-bold text-slate-600">Type</th>
@@ -531,6 +553,7 @@ export const AntiFraudAi = ({ data: initialData }: Props) => {
                         <td className="px-4 py-3 text-slate-600">Rp {f.roomRate.toLocaleString()}</td>
                         <td className="px-4 py-3 text-slate-600">Rp {f.expectedRevenue.toLocaleString()}</td>
                         <td className="px-4 py-3 font-bold text-red-600">Rp {f.actualRevenue.toLocaleString()}</td>
+                        <td className="px-4 py-3 font-bold text-red-700 bg-red-50">Rp {Math.max(0, f.expectedRevenue - f.actualRevenue).toLocaleString()}</td>
                         <td className="px-4 py-3 text-slate-600">{f.guestName}</td>
                         <td className="px-4 py-3 text-slate-600">{f.createdBy}</td>
                         <td className="px-4 py-3">
