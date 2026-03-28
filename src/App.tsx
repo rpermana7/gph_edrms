@@ -7,6 +7,7 @@ import { DistributionModule } from './components/DistributionModule';
 import { RevenueModule } from './components/RevenueModule';
 import { GuestInsightsModule } from './components/GuestInsightsModule';
 import { AuditAiModule } from './components/AuditAiModule';
+import { AntiFraudAi } from './components/AntiFraudAi';
 import EdrmsAi from './components/EdrmsAi';
 import Settings from './components/Settings';
 import { fetchRoomCountsFromDB, calculateTotalAvailableRoomNights } from './lib/rooms';
@@ -297,6 +298,10 @@ export default function App() {
     if (activeTab === 'audit') {
       return <AuditAiModule data={data} />;
     }
+
+    if (activeTab === 'antifraud') {
+      return <AntiFraudAi data={data} />;
+    }
     
     if (activeTab === 'settings') {
       return <Settings />;
@@ -312,6 +317,7 @@ export default function App() {
             {activeTab === 'revenue' && 'Room Performance'}
             {activeTab === 'guests' && 'Guest Insights'}
             {activeTab === 'reservations' && 'Reservations'}
+            {activeTab === 'antifraud' && 'ANTIFRAUD AI'}
           </h2>
           <div className="flex flex-col sm:flex-row items-center gap-3 bg-white p-2 rounded-xl border border-slate-200 shadow-sm">
             <div className="flex items-center border-r border-slate-100 pr-3">

@@ -8,7 +8,8 @@ import {
   LogOut,
   Hotel,
   PieChart as PieChartIcon,
-  ShieldAlert
+  ShieldAlert,
+  ShieldOff
 } from 'lucide-react';
 import { clsx, type ClassValue } from 'clsx';
 import { twMerge } from 'tailwind-merge';
@@ -106,6 +107,12 @@ export default function DashboardLayout({ children, activeTab, onTabChange }: Da
             active={activeTab === 'audit'} 
             onClick={() => onTabChange('audit')}
           />
+          <SidebarItem 
+            icon={ShieldOff} 
+            label="ANTIFRAUD AI" 
+            active={activeTab === 'antifraud'} 
+            onClick={() => onTabChange('antifraud')}
+          />
         </nav>
 
         <div className="p-4 border-t border-slate-100">
@@ -125,6 +132,7 @@ export default function DashboardLayout({ children, activeTab, onTabChange }: Da
           <h1 className="text-lg font-semibold text-slate-800">
             {activeTab === 'ai' ? 'EDRMS AI Intelligence' : 
              activeTab === 'audit' ? 'AUDIT AI' :
+             activeTab === 'antifraud' ? 'ANTIFRAUD AI' :
              activeTab === 'settings' ? 'Settings' : 
              'Revenue Dashboard'}
           </h1>
