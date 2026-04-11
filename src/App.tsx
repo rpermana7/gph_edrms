@@ -93,12 +93,12 @@ export default function App() {
   const [selectedMonthYear, setSelectedMonthYear] = useState('All');
   const [datePerspective, setDatePerspective] = useState<'stay' | 'booking' | 'arrival'>('stay');
   const [dateRange, setDateRange] = useState({
-    start: '2025-01-01',
-    end: '2025-12-31'
+    start: '2026-01-01',
+    end: '2026-12-31'
   });
   const [appliedFilter, setAppliedFilter] = useState({
     perspective: 'stay' as 'stay' | 'booking' | 'arrival',
-    range: { start: '2025-01-01', end: '2025-12-31' }
+    range: { start: '2026-01-01', end: '2026-12-31' }
   });
   const [activeTab, setActiveTab] = useState('overview');
   const [roomCounts, setRoomCounts] = useState<Record<string, number>>({});
@@ -126,6 +126,7 @@ export default function App() {
         const { data: reservations, error } = await supabase
           .from('reservation_report')
           .select('*')
+          .limit(10000)
           .order('Arrival', { ascending: false });
 
         if (error) throw error;
@@ -361,6 +362,62 @@ export default function App() {
             </div>
           </div>
         </div>
+
+        {data.length === 0 && !loading && (
+          <div className="bg-white border border-slate-200 rounded-2xl p-12 text-center mb-8 shadow-sm">
+            <div className="w-20 h-20 bg-slate-50 text-slate-400 rounded-full flex items-center justify-center mx-auto mb-6">
+              <Bed size={40} />
+            </div>
+            <h3 className="text-xl font-bold text-slate-900 mb-2">Database is Empty</h3>
+            <p className="text-slate-500 mb-8 max-w-md mx-auto">
+              We couldn't find any records in the 'reservation_report' table. Please ensure your data has been imported correctly.
+            </p>
+            <button 
+              onClick={() => window.location.reload()}
+              className="px-6 py-3 bg-slate-900 text-white rounded-xl font-semibold hover:bg-slate-800 transition-colors inline-flex items-center gap-2"
+            >
+              <RefreshCw size={18} />
+              Refresh Database
+            </button>
+          </div>
+        )}
+
+        {data.length > 0 && dashboardData.length === 0 && (
+          <div className="bg-amber-50 border border-amber-100 rounded-2xl p-12 text-center mb-8">
+            <div className="w-20 h-20 bg-amber-100 text-amber-600 rounded-full flex items-center justify-center mx-auto mb-6">
+              <Search size={40} />
+            </div>
+            <h3 className="text-xl font-bold text-slate-900 mb-2">No Data for Selected Range</h3>
+            <p className="text-slate-600 mb-8 max-w-md mx-auto">
+              You have {data.length} total records in the database, but none match the current filter:
+              <br />
+              <span className="font-bold">{format(parseDbDate(appliedFilter.range.start), 'dd MMM yyyy')} - {format(parseDbDate(appliedFilter.range.end), 'dd MMM yyyy')}</span>
+            </p>
+            <div className="flex flex-wrap justify-center gap-4">
+              <button 
+                onClick={() => {
+                  const currentYear = new Date().getFullYear();
+                  const newRange = { start: `${currentYear}-01-01`, end: `${currentYear}-12-31` };
+                  setDateRange(newRange);
+                  setAppliedFilter({ perspective: 'stay', range: newRange });
+                }}
+                className="px-6 py-3 bg-white border border-slate-200 text-slate-700 rounded-xl font-semibold hover:bg-slate-50 transition-colors"
+              >
+                Reset to Current Year ({new Date().getFullYear()})
+              </button>
+              <button 
+                onClick={() => {
+                  const newRange = { start: '2025-01-01', end: '2025-12-31' };
+                  setDateRange(newRange);
+                  setAppliedFilter({ perspective: 'stay', range: newRange });
+                }}
+                className="px-6 py-3 bg-emerald-500 text-white rounded-xl font-semibold hover:bg-emerald-600 transition-colors"
+              >
+                Check 2025 Data
+              </button>
+            </div>
+          </div>
+        )}
 
         {activeTab === 'overview' && (
           <>
